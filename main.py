@@ -45,39 +45,39 @@ for _ in t:
     y_test = y_true[SIZE:].to(device)
 
     # train
-    model, loss = trainModel(
+    model = trainModel(
         model=deepcopy(baseModel), x=x_train, y=y_train, lossFunction=lossFunction
     )
     # evaluate
     y_pred = model(x_test)
     baseR2Score = metric(y_pred, y_test)
-    t.set_postfix(loss=loss.item(), R2Score=baseR2Score.item())
+    t.set_postfix(R2Score=baseR2Score.item())
     # print("Loss:", loss)
     # print("baseR2Score:", baseR2Score)
     if baseR2Score > 0.7:
         break
 
-print("Loss:", loss)
-print("w_pred:", model.linear.weight.view(-1))
-print("w_true:", w_true)
-print("b_pred:", model.linear.bias.view(-1))
-print("b_true:", b_true)
+# print("Loss:", loss)
+# print("w_pred:", model.linear.weight.view(-1))
+# print("w_true:", w_true)
+# print("b_pred:", model.linear.bias.view(-1))
+# print("b_true:", b_true)
 print("R2Score:", baseR2Score)
 
 # Leave-One-Out
-LOO_R2Score = looScore(
-    x_train,
-    y_train,
-    x_test,
-    y_test,
-    baseModel,
-    lossFunction,
-    metric,
-    baseR2Score,
-)
+# LOO_R2Score = looScore(
+#     x_train,
+#     y_train,
+#     x_test,
+#     y_test,
+#     baseModel,
+#     lossFunction,
+#     metric,
+#     baseR2Score,
+# )
 
-plt.hist(LOO_R2Score)
-plt.savefig("LOO_R2Score.png")
+# plt.hist(LOO_R2Score)
+# plt.savefig("LOO_R2Score.png")
 
 # TMC
 # average performance and error

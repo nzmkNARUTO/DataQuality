@@ -1,5 +1,7 @@
 import torch
 import torch.nn.functional as F
+import torch.multiprocessing as mp
+from multiprocessing import cpu_count
 from tqdm import tqdm, trange
 from copy import deepcopy
 
@@ -41,7 +43,7 @@ def trainModel(
     return: tuple[torch.nn.Module, Tensor]
         the trained [model, loss]
     """
-    model = deepcopy(model)
+    # model = deepcopy(model)
     optimizer = torch.optim.LBFGS(model.parameters(), lr=0.01)
     # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     loss_prev = (
@@ -62,7 +64,7 @@ def trainModel(
             t.set_postfix(loss=loss.item())
             delta_loss = loss_prev - loss.item()
             loss_prev = loss.item()
-            if delta_loss < 1e-5:  # if delta loss < 1e-10, break
+            if delta_loss < 1e-3:  # if delta loss < 1e-10, break
                 break
             if loss.item() < 1e-1:  # if loss < 1e-1, break
                 break
@@ -73,4 +75,26 @@ def trainModel(
             # loss.backward()
             # optimizer.step()
             # t.set_postfix(loss=loss.item())
-    return model, loss
+    return model
+
+
+def trainModelMultiprocess(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    lossFunction: torch.nn.Module,
+    epochs: int = 5000,
+) -> torch.nn.Module:
+    model = deepcopy(model)
+    model.share_memory()
+    processes = []
+    for _ in range(cpu_count()):
+        p = mp.Process(
+            target=trainModel,
+            args=(model, x, y, lossFunction, int(epochs / cpu_count())),
+        )
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
+    return model

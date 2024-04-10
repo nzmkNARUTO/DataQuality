@@ -1,12 +1,9 @@
 import torch
 import numpy as np
-import torch.multiprocessing as mp
-from multiprocessing import cpu_count
 from torch.nn.modules import Module
 from torchmetrics.metric import Metric
 from copy import deepcopy
 from tqdm import tqdm, trange
-from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 from model import trainModel
 
 
@@ -108,7 +105,7 @@ class Shapley:
         criterion = self.lossFunction
         metric = self.metric
 
-        model, _ = trainModel(
+        model = trainModel(
             model=deepcopy(baseModel), x=x_train, y=y_train, lossFunction=criterion
         )
         bagScore = []
@@ -183,6 +180,7 @@ class TMC(Shapley):
                     self.memory.append(marginals)
                     self.indexes.append(indexes)
                     t.update()
+
                 error = self.calculateError()
                 t.refresh()
                 t.reset()
@@ -209,13 +207,13 @@ class TMC(Shapley):
                 if len(torch.unique(y)) == setSize:
                     model = deepcopy(self.baseModel)
 
-                    model, _ = trainModel(model, x, y, lossFunction)
+                    model = trainModel(model, x, y, lossFunction)
                     newScore = metric(model(x_test), y_test)
-                marginalContributions[i] = newScore - oldScore
+                marginalContributions[i] = (newScore - oldScore).detach()
                 distanceToFullScore = torch.abs(newScore - self.mean)
                 if distanceToFullScore < self.errorThreshold * self.mean:
                     truncationCount += 1
-                    if truncationCount > 5:
+                    if truncationCount >= 5:
                         break
                 else:
                     truncationCount = 0
