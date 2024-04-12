@@ -44,37 +44,67 @@ def trainModel(
         the trained [model, loss]
     """
     # model = deepcopy(model)
-    optimizer = torch.optim.LBFGS(model.parameters(), lr=0.01)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    loss_prev = (
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
     )
     with trange(epochs, desc="Training", leave=False) as t:
         for _ in t:
-
-            def closure():  # closure function for optimizer.step in LBFGS
-                y_pred = model(x)
-                loss = lossFunction(y_pred, y)
-                # print(f"Loss: {loss.item()}")
-                optimizer.zero_grad()
-                loss.backward()
-                return loss
-
-            loss = optimizer.step(closure=closure)
+            y_pred = model(x)
+            loss = lossFunction(y_pred, y)
+            optimizer.zero_grad()
+            loss.backward()
             t.set_postfix(loss=loss.item())
-            delta_loss = loss_prev - loss.item()
-            loss_prev = loss.item()
-            if delta_loss < 1e-3:  # if delta loss < 1e-10, break
+            deltaLoss = abs(previousLoss - loss.item())
+            previousLoss = loss.item()
+            if deltaLoss < 1e-3 or loss.item() < 1e-1:
                 break
-            if loss.item() < 1e-1:  # if loss < 1e-1, break
-                break
+            loss = optimizer.step()
+    return model
 
-            # y_pred = model(x)
-            # loss = criterion(y_pred, y)
-            # optimizer.zero_grad()
-            # loss.backward()
-            # optimizer.step()
-            # t.set_postfix(loss=loss.item())
+
+def _trainModelWithoutTqdm(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    lossFunction: torch.nn.Module,
+    epochs: int = 5000,
+) -> tuple[torch.nn.Module, torch.Tensor]:
+    """
+    Train the model
+
+    Parameters:
+    -----------
+    model: pytorch model
+        the model to be trained
+    x: Tensor
+        the input data
+    y: Tensor
+        the target data
+    criterion: torch.nn.Module
+        the loss function
+
+    Returns:
+    --------
+    return: tuple[torch.nn.Module, Tensor]
+        the trained [model, loss]
+    """
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    previousLoss = (
+        1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
+    )
+    for _ in range(epochs):
+        y_pred = model(x)
+        loss = lossFunction(y_pred, y)
+        optimizer.zero_grad()
+        loss.backward()
+        deltaLoss = previousLoss - loss.item()
+        previousLoss = loss.item()
+        if deltaLoss < 1e-3 or loss.item() < 1e-1:
+            break
+        loss = optimizer.step()
     return model
 
 
@@ -86,15 +116,29 @@ def trainModelMultiprocess(
     epochs: int = 5000,
 ) -> torch.nn.Module:
     model = deepcopy(model)
+    mp.set_start_method("spawn", force=True)
     model.share_memory()
     processes = []
-    for _ in range(cpu_count()):
-        p = mp.Process(
-            target=trainModel,
-            args=(model, x, y, lossFunction, int(epochs / cpu_count())),
+    cpuNumber = cpu_count()
+    epochs = int(epochs / cpuNumber)
+    pool = mp.Pool(cpuNumber)
+    for _ in range(cpuNumber):
+        p = pool.apply_async(
+            _trainModelWithoutTqdm,
+            args=(model, x, y, lossFunction, epochs),
         )
-        p.start()
         processes.append(p)
-    for p in processes:
-        p.join()
+    pool.close()
+    pool.join()
     return model
+
+    # for _ in range(cpuNumber):
+    #     p = mp.Process(
+    #         target=_trainModelWithoutTqdm,
+    #         args=(model, x, y, lossFunction, epochs),
+    #     )
+    #     p.start()
+    #     processes.append(p)
+    # for p in processes:
+    #     p.join()
+    # return model

@@ -1,10 +1,11 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 from torch.nn.modules import Module
 from torchmetrics.metric import Metric
 from copy import deepcopy
 from tqdm import tqdm, trange
-from model import trainModel
+from model import trainModel, trainModelMultiprocess
 
 
 def looScore(
@@ -87,6 +88,77 @@ class Shapley:
         self.indexes = []
         self.std = None
         self.mean = None
+        self.values = None
+
+    def _calculatePortionPerformance(self, indexes, plotPoints):
+        scores = []
+        initScore = (
+            torch.max(
+                torch.bincount(self.y_test.squeeze(-1).int()).float() / len(self.y_test)
+            )
+            .detach()
+            .cpu()
+        )
+        # initScore = np.max(np.bincount(self.y_test).astype(float) / len(self.y_test))
+        for _ in range(len(plotPoints), 0, -1):
+            scores.append(initScore)
+        return np.array(scores)[::-1]
+
+    def plotFigure(self, values, numsOfPlotMarkers=20):
+        plt.rcParams["figure.figsize"] = 8, 8
+        plt.rcParams["font.size"] = 25
+        plt.xlabel("Fraction of train data removed (%)", fontsize=20)
+        plt.ylabel("Prediction accuracy (%)", fontsize=20)
+        valueSources = [
+            [np.sum(value[i]) for i in range(len(value))] for value in values
+        ]
+        if len(values[0]) < numsOfPlotMarkers:
+            numsOfPlotMarkers = len(values[0]) - 1
+        pointsPlot = np.arange(
+            0,
+            max(len(values[0]) - 10, numsOfPlotMarkers),
+            max(len(values[0]) // numsOfPlotMarkers, 1),
+        )
+        performance = [
+            self._calculatePortionPerformance(
+                np.argsort(valueSources)[::-1], pointsPlot
+            )
+        ]
+        round = np.mean(
+            [
+                self._calculatePortionPerformance(
+                    np.random.permutation(np.argsort(valueSources[0])[::-1]), pointsPlot
+                )
+                for _ in range(10)
+            ],
+            0,
+        )
+        plt.plot(
+            pointsPlot / len(self.x_train) * 100,
+            performance[0] * 100,
+            "-",
+            lw=5,
+            ms=10,
+            color="b",
+        )
+        plt.plot(
+            pointsPlot / len(self.x_train) * 100,
+            performance[-1] * 100,
+            "-.",
+            lw=5,
+            ms=10,
+            color="g",
+        )
+        plt.plot(
+            pointsPlot / len(self.x_train) * 100,
+            round * 100,
+            ":",
+            lw=5,
+            ms=10,
+            color="r",
+        )
+        plt.savefig("Shapley.png", bbox_inches="tight")
+        plt.close()
 
     def bagScore(self) -> tuple[float, float]:
         """
@@ -132,14 +204,6 @@ class Shapley:
         )
         return np.max(errors)
 
-    def run(self):
-        if self.calculateError() < self.errorThreshold:
-            return
-        self.shapley()
-
-    def shapley(self):
-        pass
-
 
 class TMC(Shapley):
 
@@ -170,9 +234,10 @@ class TMC(Shapley):
     def shapley(self):
         self.bagScore()
         error = self.calculateError()
+        round = 1
         with tqdm(
             total=self.truncatedRounds,
-            desc=f"Calculating TMC shapley, error={error:.4f}",
+            desc=f"Calculating TMC shapley round {round}, error={error:.4f}",
         ) as t:
             while error > self.errorThreshold:
                 for _ in range(self.truncatedRounds):
@@ -184,7 +249,11 @@ class TMC(Shapley):
                 error = self.calculateError()
                 t.refresh()
                 t.reset()
-                t.set_description(f"Calculating TMC shapley, error={error:.4f}")
+                round += 1
+                t.set_description(
+                    f"Calculating TMC shapley round {round}, error={error:.4f}"
+                )
+        self.values = np.mean(self.memory, axis=0)
 
     def oneRound(self):
         metric = self.metric
@@ -206,14 +275,13 @@ class TMC(Shapley):
                 y = torch.cat([y, y_train[i].unsqueeze(0)])
                 if len(torch.unique(y)) == setSize:
                     model = deepcopy(self.baseModel)
-
                     model = trainModel(model, x, y, lossFunction)
                     newScore = metric(model(x_test), y_test)
                 marginalContributions[i] = (newScore - oldScore).detach()
                 distanceToFullScore = torch.abs(newScore - self.mean)
                 if distanceToFullScore < self.errorThreshold * self.mean:
                     truncationCount += 1
-                    if truncationCount >= 5:
+                    if truncationCount >= 4:
                         break
                 else:
                     truncationCount = 0
