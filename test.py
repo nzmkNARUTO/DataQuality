@@ -1,8 +1,10 @@
-import torch
-from torchmetrics.classification import Accuracy
+import numpy as np
 
-metric = Accuracy("binary")
-x = torch.tensor([0.0, 1.0, 0.0, 1.0, 0.0])
-y = torch.tensor([0.0, 1.0, 0.0, 1.0, 0.0])
 
-print(metric(x, y))
+def test(a: int):
+    for i in a:
+        print(i)
+
+
+a = np.array([1, 2, 3, 4, 5])
+test(a)
