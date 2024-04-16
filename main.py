@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     # metric = R2Score().to(device)
     metric = Accuracy("binary").to(device)
-    lossFunction = torch.nn.MSELoss().to(device)
+    lossFunction = torch.nn.BCELoss().to(device)
 
     # train
     with trange(100, desc="Finding appropriate dataset") as t:

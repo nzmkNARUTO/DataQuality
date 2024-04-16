@@ -1,16 +1,8 @@
-from time import sleep
-from tqdm import tqdm, trange
+import torch
+from torchmetrics.classification import Accuracy
 
-s = range(10)
-with tqdm(total=len(s), desc="testing....") as t:
+metric = Accuracy("binary")
+x = torch.tensor([0.0, 1.0, 0.0, 1.0, 0.0])
+y = torch.tensor([0.0, 1.0, 0.0, 1.0, 0.0])
 
-    for i in s:
-        sleep(1)
-        t.update()
-
-    t.refresh()
-    t.reset(20)
-
-    for i in s:
-        sleep(1)
-        t.update()
+print(metric(x, y))

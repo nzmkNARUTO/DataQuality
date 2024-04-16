@@ -157,6 +157,7 @@ class Shapley:
             lw=5,
             ms=10,
             color="b",
+            label="TMC",
         )
         plt.plot(
             pointsPlot / len(self.x_train) * 100,
@@ -165,6 +166,7 @@ class Shapley:
             lw=5,
             ms=10,
             color="g",
+            label="LOO",
         )
         plt.plot(
             pointsPlot / len(self.x_train) * 100,
@@ -173,7 +175,9 @@ class Shapley:
             lw=5,
             ms=10,
             color="r",
+            label="Random",
         )
+        plt.legend()
         plt.savefig("Shapley.png", bbox_inches="tight")
         plt.close()
 

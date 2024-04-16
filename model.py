@@ -65,7 +65,7 @@ def trainModel(
             t.set_postfix(loss=f"{loss.item():.4f}")
         deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
-        if deltaLoss < 1e-4 or previousLoss < 1e-2:
+        if previousLoss < 1e-2:
             break
         loss = optimizer.step()
     if tqdm:
