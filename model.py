@@ -7,9 +7,10 @@ from copy import deepcopy
 
 
 class LogisticRegressionModel(torch.nn.Module):
-    def __init__(self, POLY_DEGREE):
+
+    def __init__(self, X_DIMENSION):
         super(LogisticRegressionModel, self).__init__()
-        self.linear = torch.nn.Linear(POLY_DEGREE, 1)
+        self.linear = torch.nn.Linear(X_DIMENSION, 1)
 
     def forward(self, x):
         y_pred = self.linear(x)
@@ -23,6 +24,7 @@ def trainModel(
     y: torch.Tensor,
     lossFunction: torch.nn.Module,
     epochs: int = 5000,
+    tqdm: bool = True,
 ) -> tuple[torch.nn.Module, torch.Tensor]:
     """
     Train the model
@@ -43,102 +45,29 @@ def trainModel(
     return: tuple[torch.nn.Module, Tensor]
         the trained [model, loss]
     """
-    # model = deepcopy(model)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    model = deepcopy(model)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
     )
-    with trange(epochs, desc="Training", leave=False) as t:
-        for _ in t:
-            y_pred = model(x)
-            loss = lossFunction(y_pred, y)
-            optimizer.zero_grad()
-            loss.backward()
-            t.set_postfix(loss=loss.item())
-            deltaLoss = abs(previousLoss - loss.item())
-            previousLoss = loss.item()
-            if deltaLoss < 1e-3 or loss.item() < 1e-1:
-                break
-            loss = optimizer.step()
-    return model
-
-
-def _trainModelWithoutTqdm(
-    model: torch.nn.Module,
-    x: torch.Tensor,
-    y: torch.Tensor,
-    lossFunction: torch.nn.Module,
-    epochs: int = 5000,
-) -> tuple[torch.nn.Module, torch.Tensor]:
-    """
-    Train the model
-
-    Parameters:
-    -----------
-    model: pytorch model
-        the model to be trained
-    x: Tensor
-        the input data
-    y: Tensor
-        the target data
-    criterion: torch.nn.Module
-        the loss function
-
-    Returns:
-    --------
-    return: tuple[torch.nn.Module, Tensor]
-        the trained [model, loss]
-    """
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-
-    previousLoss = (
-        1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
-    )
-    for _ in range(epochs):
+    if tqdm:
+        t = trange(epochs, desc="Training", leave=False)
+    else:
+        t = range(epochs)
+    for _ in t:
         y_pred = model(x)
         loss = lossFunction(y_pred, y)
         optimizer.zero_grad()
         loss.backward()
-        deltaLoss = previousLoss - loss.item()
+        if tqdm:
+            t.set_postfix(loss=f"{loss.item():.4f}")
+        deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
-        if deltaLoss < 1e-3 or loss.item() < 1e-1:
+        if deltaLoss < 1e-4 or previousLoss < 1e-2:
             break
         loss = optimizer.step()
+    if tqdm:
+        t.close()
     return model
-
-
-def trainModelMultiprocess(
-    model: torch.nn.Module,
-    x: torch.Tensor,
-    y: torch.Tensor,
-    lossFunction: torch.nn.Module,
-    epochs: int = 5000,
-) -> torch.nn.Module:
-    model = deepcopy(model)
-    mp.set_start_method("spawn", force=True)
-    model.share_memory()
-    processes = []
-    cpuNumber = cpu_count()
-    epochs = int(epochs / cpuNumber)
-    pool = mp.Pool(cpuNumber)
-    for _ in range(cpuNumber):
-        p = pool.apply_async(
-            _trainModelWithoutTqdm,
-            args=(model, x, y, lossFunction, epochs),
-        )
-        processes.append(p)
-    pool.close()
-    pool.join()
-    return model
-
-    # for _ in range(cpuNumber):
-    #     p = mp.Process(
-    #         target=_trainModelWithoutTqdm,
-    #         args=(model, x, y, lossFunction, epochs),
-    #     )
-    #     p.start()
-    #     processes.append(p)
-    # for p in processes:
-    #     p.join()
-    # return model

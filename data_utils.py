@@ -1,9 +1,10 @@
 import torch
+import numpy as np
 from scipy.stats import logistic
 
 
 def f(
-    x: torch.Tensor, w: torch.Tensor, b: torch.Tensor, POLY_DEGREE: int
+    x: torch.Tensor, w: torch.Tensor, b: torch.Tensor, POLY_DEGREE: int, IMPORTANT: int
 ) -> torch.Tensor:
     """
     The function to be learned
@@ -24,6 +25,8 @@ def f(
     return: torch.Tensor
         the output data
     """
+    importantDimension = np.random.choice(x.shape[-1], IMPORTANT, replace=False)
+    x = x[:, importantDimension]
     features = []  # every degree of x
     n = x.shape[0]
     exp = x  # higher degree of x
@@ -35,10 +38,10 @@ def f(
         exp = exp.unsqueeze(-1)  # move to higher degree
         holder = exp * holder.unsqueeze(1)  # calculate the higher degree of x
     features = torch.cat(features, -1)  # concatenate all the degrees of x
-    return w * features + b
+    return torch.sum(w * features + b, -1).unsqueeze(-1)
 
 
-def regression2classification(y_true: torch.Tensor) -> torch.Tensor:
+def regression2classification(y_true: torch.Tensor, parameter: float) -> torch.Tensor:
     """
     Convert regression label to classification binary label
 
@@ -54,4 +57,6 @@ def regression2classification(y_true: torch.Tensor) -> torch.Tensor:
     """
     mean, std = y_true.mean(0), y_true.std(0)
     y_true = (y_true - mean) / std  # normalize
-    return (y_true < 0.5).float()
+    y_true = logistic.cdf(parameter * y_true)
+    y = (np.random.random(y_true.shape[-1]) < y_true).astype(np.float32)
+    return torch.from_numpy(y)
