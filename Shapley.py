@@ -76,6 +76,7 @@ class Shapley:
         metric: Metric,
         errorThreshold: float,
         truncatedRounds: int,
+        seed: int = 0,
     ) -> None:
         self.x_train = x_train  # the input data of training dataset
         self.y_train = y_train  # the target data of training dataset
@@ -83,17 +84,32 @@ class Shapley:
         self.y_test = y_test  # the target data of testing dataset
         self.baseModel = baseModel  # the base model
         self.lossFunction = lossFunction  # the loss function
-        self.metric = metric  # the metric function, R2 score
+        self.metric = metric  # the metric function, accuracy
         self.errorThreshold = errorThreshold  # the error threshold
         self.truncatedRounds = truncatedRounds  # truncate every truncatedRounds
-        self.convergence = 0  # the convergence?
-        self.memory = []
-        self.indexes = []
-        self.std = None
-        self.mean = None
-        self.values = None
+        np.random.seed(seed)
+        self.memory = []  # the memory of the marginal contributions
+        self.indexes = []  # the indexes of the data
+        self.std = None  # the standard deviation of the Bagging
+        self.mean = None  # the mean of the Bagging
+        self.values = None  # the Shapley values
 
-    def _calculatePortionPerformance(self, indexes, plotPoints):
+    def _calculatePortionPerformance(self, indexes: list, plotPoints: list) -> np.array:
+        """
+        Calculate the portion performance
+
+        Parameters:
+        -----------
+        indexes: list
+            the indexes of the data
+        plotPoints: list
+            the plot points
+
+        Returns:
+        --------
+        return: np.array
+            the portion performance
+        """
         x_train, y_train = self.x_train, self.y_train
         x_test, y_test = self.x_test, self.y_test
         lossFunction = self.lossFunction
@@ -118,10 +134,21 @@ class Shapley:
             y_pred = model(x_test)
             scores.append(metric(y_pred, y_test).detach().cpu())
             # else:
-            # scores.append(initScore)
+            #     scores.append(initScore)
         return np.array(scores)[::-1]
 
-    def plotFigure(self, values, numsOfPlotMarkers=20):
+    def plotFigure(self, values: list, numsOfPlotMarkers: int = 20) -> None:
+        """
+        Plot the result figure
+
+        Parameters:
+        -----------
+        values: list
+            the values need to be plotted
+        numsOfPlotMarkers: int
+            the number of plot markers
+
+        """
         plt.rcParams["figure.figsize"] = 8, 8
         plt.rcParams["font.size"] = 25
         plt.xlabel("Fraction of train data removed (%)", fontsize=20)
@@ -215,7 +242,16 @@ class Shapley:
             bagScore.append(r2Score.unsqueeze(0))
         self.std, self.mean = torch.std_mean(torch.cat(bagScore, dim=0))
 
-    def calculateError(self):
+    def calculateError(self) -> float:
+        """
+        Calculate the error
+
+        Returns:
+        --------
+        return: float
+            the error
+        """
+
         memory = self.memory
         if len(memory) < self.truncatedRounds:
             return 1.0
@@ -243,17 +279,19 @@ class TMC(Shapley):
         metric: Metric,
         errorThreshold: float,
         truncatedRounds: int,
+        seed: int = 0,
     ) -> None:
         super().__init__(
-            x_train,
-            y_train,
-            x_test,
-            y_test,
-            baseModel,
-            lossFunction,
-            metric,
-            errorThreshold,
-            truncatedRounds,
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+            baseModel=baseModel,
+            lossFunction=lossFunction,
+            metric=metric,
+            errorThreshold=errorThreshold,
+            truncatedRounds=truncatedRounds,
+            seed=seed,
         )
 
     def shapley(self):
@@ -305,7 +343,9 @@ class TMC(Shapley):
         lossFunction = self.lossFunction
         x_train, y_train = self.x_train, self.y_train
         x_test, y_test = self.x_test, self.y_test
-        indexes = np.random.permutation(len(x_train))
+        indexes = np.random.permutation(
+            len(x_train)
+        )  # random permutation of train data
         marginalContributions = np.zeros(len(x_train))
         x = torch.zeros((0,) + tuple(x_train.shape[1:])).to(x_train.device)
         y = torch.zeros((0,) + tuple(y_train.shape[1:])).to(y_train.device)
@@ -320,15 +360,15 @@ class TMC(Shapley):
             oldScore = newScore
             x = torch.cat([x, x_train[i].unsqueeze(0)])
             y = torch.cat([y, y_train[i].unsqueeze(0)])
-            if len(torch.unique(y)) == setSize:
-                model = deepcopy(self.baseModel)
-                model = trainModel(
-                    model=model, x=x, y=y, lossFunction=lossFunction, tqdm=TQDM
-                )
-                newScore = metric(model(x_test), y_test)
+            # if len(torch.unique(y)) == setSize:
+            model = deepcopy(self.baseModel)
+            model = trainModel(
+                model=model, x=x, y=y, lossFunction=lossFunction, tqdm=TQDM
+            )
+            newScore = metric(model(x_test), y_test)
             marginalContributions[i] = (newScore - oldScore).detach()
             distanceToFullScore = torch.abs(newScore - self.mean)
-            if distanceToFullScore <= 0.1 * self.mean:
+            if distanceToFullScore <= 0.01 * self.mean:
                 truncationCount += 1
                 if truncationCount >= 4:
                     break

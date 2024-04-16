@@ -19,6 +19,8 @@ def f(
         the bias
     POLY_DEGREE: int
         the degree of the polynomial
+    IMPORTANT: int
+        the number of important dimensions
 
     Returns:
     --------

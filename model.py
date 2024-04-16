@@ -1,8 +1,6 @@
 import torch
 import torch.nn.functional as F
-import torch.multiprocessing as mp
-from multiprocessing import cpu_count
-from tqdm import tqdm, trange
+from tqdm import trange
 from copy import deepcopy
 
 
@@ -25,7 +23,7 @@ def trainModel(
     lossFunction: torch.nn.Module,
     epochs: int = 5000,
     tqdm: bool = True,
-) -> tuple[torch.nn.Module, torch.Tensor]:
+) -> torch.nn.Module:
     """
     Train the model
 
@@ -39,15 +37,17 @@ def trainModel(
         the target data
     criterion: torch.nn.Module
         the loss function
+    tqdm: bool
+        whether to use tqdm
 
     Returns:
     --------
-    return: tuple[torch.nn.Module, Tensor]
-        the trained [model, loss]
+    return: torch.nn.Module
+        the trained model
     """
     model = deepcopy(model)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
@@ -65,7 +65,7 @@ def trainModel(
             t.set_postfix(loss=f"{loss.item():.4f}")
         deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
-        if previousLoss < 1e-2:
+        if previousLoss < 1e-1:
             break
         loss = optimizer.step()
     if tqdm:

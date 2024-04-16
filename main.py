@@ -1,10 +1,8 @@
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-from torchmetrics.regression import R2Score
 from torchmetrics.classification import Accuracy
 from copy import deepcopy
-from tqdm import tqdm, trange
+from tqdm import trange
 from data_utils import f, regression2classification
 from model import LogisticRegressionModel, trainModel
 from Shapley import looScore, TMC
@@ -22,7 +20,6 @@ if __name__ == "__main__":
     # device = torch.device("cpu")
     baseModel = LogisticRegressionModel(X_DIMENSION).to(device)
 
-    # metric = R2Score().to(device)
     metric = Accuracy("binary").to(device)
     lossFunction = torch.nn.BCELoss().to(device)
 
@@ -83,9 +80,6 @@ if __name__ == "__main__":
         baseScore,
     )
 
-    # plt.hist(LOOScore)
-    # plt.savefig("LOO_R2Score.png")
-
     # TMC
     # average performance and error
 
@@ -100,6 +94,7 @@ if __name__ == "__main__":
         metric=metric,
         errorThreshold=errorThreshold,
         truncatedRounds=100,
+        seed=0,
     )
     tmc.shapley()
     tmc.plotFigure([tmc.values, LOOScore])
