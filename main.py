@@ -61,8 +61,6 @@ if __name__ == "__main__":
             baseScore = metric(y_pred, y_test)
             t.set_postfix(score=baseScore.item(), parameter=parameter)
             if baseScore > 0.7:
-                t.n = 100
-                t.refresh()
                 break
             parameter *= 1.01
 
