@@ -1,3 +1,8 @@
-import math
+from tqdm import trange
 
-print(math.inf > 1.0)
+with trange(10) as t:
+    for i in t:
+        t.n = 9
+        t.refresh()
+        break
+    print(t.n)

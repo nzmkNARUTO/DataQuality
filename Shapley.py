@@ -376,8 +376,6 @@ class TMC(Shapley):
             if distanceToFullScore <= 0.01 * self.mean:
                 truncationCount += 1
                 if truncationCount >= 4:
-                    t.n = len(indexes)
-                    t.refresh()
                     break
             else:
                 truncationCount = 0
