@@ -305,16 +305,17 @@ class TMC(Shapley):
         round = 1
 
         processes = []
-        mp.set_start_method("spawn", force=True)
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
 
         with tqdm(
             total=self.truncatedRounds,
-            desc=f"Calculating TMC shapley round {round}, error={error:.4f}",
             leave=True,
         ) as t:
             update = lambda *args: t.update()
             while error > self.errorThreshold:
+                t.set_description(
+                    f"Calculating TMC shapley round {round}, error={error:.4f}"
+                )
                 if MULTIPROCESS:
                     pool = mp.Pool(cpuNumber)
                     for _ in range(self.truncatedRounds):
@@ -339,9 +340,6 @@ class TMC(Shapley):
                 t.refresh()
                 t.reset()
                 round += 1
-                t.set_description(
-                    f"Calculating TMC shapley round {round}, error={error:.4f}"
-                )
         self.values = np.mean(self.memory, axis=0)
 
     def _oneRound(self):
@@ -447,7 +445,6 @@ class G(Shapley):
         lossFunction, metric = self.lossFunction, self.metric
         baseModel = deepcopy(self.baseModel)
         bestScore = 0.0
-        mp.set_start_method("spawn", force=True)
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(np.arange(1, 5, 0.5), desc="Finding learning rate") as t:
             if MULTIPROCESS:
@@ -549,15 +546,16 @@ class G(Shapley):
         processes = []
         self.leanringRate = self._findLearningRate()
         print(f"Using learning rate {self.leanringRate}")
-        mp.set_start_method("spawn", force=True)
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(
             total=self.truncatedRounds,
-            desc=f"Calculating G shapley round {round}, error={error:.4f}",
             leave=True,
         ) as t:
             update = lambda *args: t.update()
             while error > self.errorThreshold:
+                t.set_description(
+                    f"Calculating G shapley round {round}, error={error:.4f}"
+                )
                 if MULTIPROCESS:
                     pool = mp.Pool(cpuNumber)
                     for _ in range(self.truncatedRounds):
@@ -582,7 +580,4 @@ class G(Shapley):
                 t.refresh()
                 t.reset()
                 round += 1
-                t.set_description(
-                    f"Calculating TMC shapley round {round}, error={error:.4f}"
-                )
         self.values = np.mean(self.memory, axis=0)

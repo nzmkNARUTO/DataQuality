@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 from torchmetrics.classification import Accuracy
 from copy import deepcopy
 from tqdm import trange
@@ -16,6 +17,7 @@ if __name__ == "__main__":
     SIZE = 100  # the size of train dataset
 
     torch.set_num_threads(6)
+    mp.set_start_method("spawn", force=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu")
     baseModel = LogisticRegressionModel(X_DIMENSION).to(device)
