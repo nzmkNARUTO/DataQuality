@@ -67,6 +67,8 @@ def trainModel(
         deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
         if previousLoss < 1e-2:
+            t.n = epochs
+            t.refresh()
             break
         loss = optimizer.step()
     if tqdm:

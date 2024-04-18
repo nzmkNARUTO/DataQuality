@@ -309,13 +309,12 @@ class TMC(Shapley):
 
         with tqdm(
             total=self.truncatedRounds,
+            desc=f"Calculating TMC shapley round {round}, error={error:.4f}",
             leave=True,
         ) as t:
             update = lambda *args: t.update()
             while error > self.errorThreshold:
-                t.set_description(
-                    f"Calculating TMC shapley round {round}, error={error:.4f}"
-                )
+                t.reset()
                 if MULTIPROCESS:
                     pool = mp.Pool(cpuNumber)
                     for _ in range(self.truncatedRounds):
@@ -337,8 +336,10 @@ class TMC(Shapley):
                         update()
 
                 error = self._calculateError()
+                t.set_description(
+                    f"Calculating TMC shapley round {round}, error={error:.4f}"
+                )
                 t.refresh()
-                t.reset()
                 round += 1
         self.values = np.mean(self.memory, axis=0)
 
@@ -375,6 +376,8 @@ class TMC(Shapley):
             if distanceToFullScore <= 0.01 * self.mean:
                 truncationCount += 1
                 if truncationCount >= 4:
+                    t.n = len(indexes)
+                    t.refresh()
                     break
             else:
                 truncationCount = 0
@@ -549,13 +552,12 @@ class G(Shapley):
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(
             total=self.truncatedRounds,
+            desc=f"Calculating G shapley round {round}, error={error:.4f}",
             leave=True,
         ) as t:
             update = lambda *args: t.update()
             while error > self.errorThreshold:
-                t.set_description(
-                    f"Calculating G shapley round {round}, error={error:.4f}"
-                )
+                t.reset()
                 if MULTIPROCESS:
                     pool = mp.Pool(cpuNumber)
                     for _ in range(self.truncatedRounds):
@@ -577,7 +579,9 @@ class G(Shapley):
                         update()
 
                 error = self._calculateError()
+                t.set_description(
+                    f"Calculating G shapley round {round}, error={error:.4f}"
+                )
                 t.refresh()
-                t.reset()
                 round += 1
         self.values = np.mean(self.memory, axis=0)
