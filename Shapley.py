@@ -211,7 +211,7 @@ class Shapley:
             label="Random",
         )
         plt.legend()
-        plt.savefig("Shapley.png", bbox_inches="tight")
+        plt.savefig(f"{self.__class__.__name__}.png", bbox_inches="tight")
         plt.close()
 
     def _bagScore(self) -> tuple[float, float]:
