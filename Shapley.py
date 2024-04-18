@@ -10,6 +10,7 @@ from tqdm import tqdm, trange
 from model import trainModel
 
 MULTIPROCESS = True
+MAXCPUCOUNT = 20
 
 
 def looScore(
@@ -305,7 +306,7 @@ class TMC(Shapley):
 
         processes = []
         mp.set_start_method("spawn", force=True)
-        cpuNumber = min(mp.cpu_count(), 10)
+        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
 
         with tqdm(
             total=self.truncatedRounds,
@@ -447,7 +448,7 @@ class G(Shapley):
         baseModel = deepcopy(self.baseModel)
         bestScore = 0.0
         mp.set_start_method("spawn", force=True)
-        cpuNumber = min(mp.cpu_count(), 10)
+        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(np.arange(1, 5, 0.5), desc="Finding learning rate") as t:
             if MULTIPROCESS:
                 pool = mp.Pool(cpuNumber)
@@ -549,7 +550,7 @@ class G(Shapley):
         self.leanringRate = self._findLearningRate()
         print(f"Using learning rate {self.leanringRate}")
         mp.set_start_method("spawn", force=True)
-        cpuNumber = min(mp.cpu_count(), 10)
+        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(
             total=self.truncatedRounds,
             desc=f"Calculating G shapley round {round}, error={error:.4f}",
