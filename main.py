@@ -80,24 +80,24 @@ if __name__ == "__main__":
         baseScore,
     )
 
+    errorThreshold = 0.1
     # TMC
     # average performance and error
 
-    errorThreshold = 0.1
-    tmc = TMC(
-        x_train=x_train,
-        y_train=y_train,
-        x_test=x_test,
-        y_test=y_test,
-        baseModel=baseModel,
-        lossFunction=lossFunction,
-        metric=metric,
-        errorThreshold=errorThreshold,
-        truncatedRounds=100,
-        seed=0,
-    )
-    tmc.shapley()
-    tmc.plotFigure([tmc.values, LOOScore])
+    # tmc = TMC(
+    #     x_train=x_train,
+    #     y_train=y_train,
+    #     x_test=x_test,
+    #     y_test=y_test,
+    #     baseModel=baseModel,
+    #     lossFunction=lossFunction,
+    #     metric=metric,
+    #     errorThreshold=errorThreshold,
+    #     truncatedRounds=100,
+    #     seed=0,
+    # )
+    # tmc.shapley()
+    # tmc.plotFigure([tmc.values, LOOScore])
 
     g = G(
         x_train=x_train,
@@ -109,6 +109,7 @@ if __name__ == "__main__":
         metric=metric,
         errorThreshold=errorThreshold,
         truncatedRounds=100,
+        epoch=1,
         seed=0,
     )
     g.shapley()

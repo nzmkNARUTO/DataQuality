@@ -23,7 +23,7 @@ def trainModel(
     lossFunction: torch.nn.Module,
     epochs: int = 5000,
     tqdm: bool = True,
-    learningRate: float = 0.1,
+    learningRate: float = 0.03,
 ) -> torch.nn.Module:
     """
     Train the model
