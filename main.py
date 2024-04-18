@@ -5,7 +5,7 @@ from copy import deepcopy
 from tqdm import trange
 from data_utils import f, regression2classification
 from model import LogisticRegressionModel, trainModel
-from Shapley import looScore, TMC
+from Shapley import looScore, TMC, G
 
 if __name__ == "__main__":
 
@@ -98,3 +98,18 @@ if __name__ == "__main__":
     )
     tmc.shapley()
     tmc.plotFigure([tmc.values, LOOScore])
+
+    g = G(
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
+        baseModel=baseModel,
+        lossFunction=lossFunction,
+        metric=metric,
+        errorThreshold=errorThreshold,
+        truncatedRounds=100,
+        seed=0,
+    )
+    g.shapley()
+    g.plotFigure([g.values, LOOScore])

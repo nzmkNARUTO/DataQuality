@@ -1,3 +1,4 @@
+import math
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -239,10 +240,10 @@ class Shapley:
             )  # random extraction with replacement
             y_pred = model(x_test[bagIndexes])
             r2Score = metric(y_pred, y_test[bagIndexes])
-            bagScore.append(r2Score.unsqueeze(0))
-        self.std, self.mean = torch.std_mean(torch.cat(bagScore, dim=0))
+            bagScore.append(r2Score)
+        self.std, self.mean = torch.std_mean(torch.stack(bagScore))
 
-    def calculateError(self) -> float:
+    def _calculateError(self) -> float:
         """
         Calculate the error
 
@@ -296,7 +297,7 @@ class TMC(Shapley):
 
     def shapley(self):
         self.bagScore()
-        error = self.calculateError()
+        error = self._calculateError()
         round = 1
 
         processes = []
@@ -318,7 +319,7 @@ class TMC(Shapley):
                     # t.update()
 
                     processes.append(
-                        pool.apply_async(func=self.oneRound, callback=update)
+                        pool.apply_async(func=self._oneRound, callback=update)
                     )
                 pool.close()
                 pool.join()
@@ -328,7 +329,7 @@ class TMC(Shapley):
                     self.memory.append(marginals)
                     self.indexes.append(indexes)
 
-                error = self.calculateError()
+                error = self._calculateError()
                 t.refresh()
                 t.reset()
                 round += 1
@@ -337,7 +338,7 @@ class TMC(Shapley):
                 )
         self.values = np.mean(self.memory, axis=0)
 
-    def oneRound(self):
+    def _oneRound(self):
         metric = self.metric
         model = deepcopy(self.baseModel)
         lossFunction = self.lossFunction
@@ -380,3 +381,154 @@ class TMC(Shapley):
                     distance=f"{distanceToFullScore.detach().cpu().numpy():.4f}",
                 )
         return marginalContributions, indexes
+
+
+class G(Shapley):
+    def __init__(
+        self,
+        x_train: torch.Tensor,
+        y_train: torch.Tensor,
+        x_test: torch.Tensor,
+        y_test: torch.Tensor,
+        baseModel: Module,
+        lossFunction: Module,
+        metric: Metric,
+        errorThreshold: float,
+        truncatedRounds: int,
+        epoch: int,
+        batchSize: int = 128,
+        seed: int = 0,
+    ) -> None:
+        super().__init__(
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+            baseModel=baseModel,
+            lossFunction=lossFunction,
+            metric=metric,
+            errorThreshold=errorThreshold,
+            truncatedRounds=truncatedRounds,
+            seed=seed,
+        )
+        self.leanringRate = None
+        self.maxEpoch = epoch
+        self.batchSize = batchSize
+
+    def _findLearningRate(self):
+        bestScore = 0.0
+        for i in trange(1, 5, 0.5):
+            model = deepcopy(self.baseModel)
+            scores = []
+            for _ in range(10):
+                model = trainModel(
+                    model=model,
+                    x=self.x_train,
+                    y=self.y_train,
+                    lossFunction=self.lossFunction,
+                    learningRate=10 ** (-i),
+                )
+                y_pred = model(self.x_test)
+                score = self.metric(y_pred, self.y_test)
+                scores.append(score)
+            if (
+                torch.mean(torch.stack(scores)) - torch.std(torch.stack(scores))
+                > bestScore
+            ):
+                bestScore = torch.mean(torch.stack(scores)) - torch.std(
+                    torch.stack(scores)
+                )
+                learningRate = 10 ** (-i)
+        return learningRate
+
+    def _oneRound(self):
+        learningRate = self.leanringRate
+        metric = self.metric
+        model = deepcopy(self.baseModel)
+        lossFunction = self.lossFunction
+        x_train, y_train = self.x_train, self.y_train
+        x_test, y_test = self.x_test, self.y_test
+        epoch, batchSize = self.maxEpoch, self.batchSize
+        marginalContributions = np.zeros(len(x_train))
+        indexes = []
+        values = []
+        stopCounter = 0
+        bestScore = -math.inf
+        for _ in range(epoch):
+            vals = []
+            idxs = np.random.permutation(len(x_train))
+            batches = [
+                idxs[k * batchSize : (k + 1) * batchSize]
+                for k in range(int(np.ceil(len(idxs) / batchSize)))
+            ]
+            idxs = batches
+            for _, batch in enumerate(batches):
+                model = trainModel(
+                    model,
+                    x_train[batch],
+                    y_train[batch],
+                    lossFunction,
+                    learningRate=learningRate,
+                )
+                vals.append(metric(model(x_test), y_test))
+            indexes.append(idxs)
+            values.append(vals)
+            currentScore = np.mean(vals)
+            if currentScore > bestScore:
+                bestScore = currentScore
+                stopCounter = 0
+            else:
+                stopCounter += 1
+                if stopCounter >= 1:
+                    break
+        marginalContributions[1:] += values[0][1:]
+        marginalContributions[1:] -= values[0][:-1]
+        individualContributions = np.zeros(len(x_train))
+        for i, index in enumerate(indexes[0]):
+            individualContributions[index] += marginalContributions[i]
+            individualContributions[index] /= len(index)
+        self.memory = np.concatenate(
+            self.memory, np.reshape(individualContributions, (1, -1))
+        )
+        self.indexes = np.concatenate(self.indexes, np.reshape(indexes[0], (1, -1)))
+
+    def shapley(self):
+        round = 1
+        error = self.calculateError()
+        processes = []
+        mp.set_start_method("spawn", force=True)
+        cpuNumber = mp.cpu_count()
+        self.leanringRate = self._findLearningRate()
+        with tqdm(
+            total=self.truncatedRounds,
+            desc=f"Calculating G shapley round {round}, error={error:.4f}",
+            leave=True,
+        ) as t:
+            update = lambda *args: t.update()
+            while error > self.errorThreshold:
+                pool = mp.Pool(cpuNumber)
+                for _ in range(self.truncatedRounds):
+                    # marginals, indexes = self.oneRound()
+                    # self.memory.append(marginals)
+                    # self.indexes.append(indexes)
+                    # t.update()
+
+                    processes.append(
+                        pool.apply_async(func=self._oneRound, callback=update)
+                    )
+                pool.close()
+                pool.join()
+
+                for p in processes:
+                    marginals, indexes = p.get()
+                    self.memory.append(marginals)
+                    self.indexes.append(indexes)
+
+                error = self._calculateError()
+                t.refresh()
+                t.reset()
+                round += 1
+                t.set_description(
+                    f"Calculating TMC shapley round {round}, error={error:.4f}"
+                )
+        self.values = np.mean(self.memory, axis=0)
