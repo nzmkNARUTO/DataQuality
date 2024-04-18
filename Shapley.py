@@ -190,7 +190,7 @@ class Shapley:
             lw=5,
             ms=10,
             color="b",
-            label="TMC",
+            label=f"{self.__class__.__name__}",
         )
         plt.plot(
             pointsPlot / len(self.x_train) * 100,
