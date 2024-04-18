@@ -23,6 +23,7 @@ def trainModel(
     lossFunction: torch.nn.Module,
     epochs: int = 5000,
     tqdm: bool = True,
+    learningRate: float = 0.1,
 ) -> torch.nn.Module:
     """
     Train the model
@@ -47,7 +48,7 @@ def trainModel(
     """
     model = deepcopy(model)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
 
     previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
@@ -65,7 +66,7 @@ def trainModel(
             t.set_postfix(loss=f"{loss.item():.4f}")
         deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
-        if previousLoss < 1e-1:
+        if previousLoss < 1e-2:
             break
         loss = optimizer.step()
     if tqdm:
