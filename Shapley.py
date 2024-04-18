@@ -358,7 +358,7 @@ class TMC(Shapley):
         truncationCount = 0
         newScore = metric(model(x_test), y_test)
         setSize = len(torch.unique(y_train))
-        if MULTIPROCESS:
+        if self.tqdm:
             t = tqdm(indexes, desc="TMC one round", leave=False)
         else:
             t = indexes
