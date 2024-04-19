@@ -38,10 +38,6 @@ if __name__ == "__main__":
             b_true = torch.rand(1) * 5
             y_true = f(x_true, w_true, b_true, POLY_DEGREE, IMPORTANT)
             y_true = regression2classification(y_true, parameter=parameter)
-            # print("w_true:", w_true.shape)
-            # print("x_true:", x_true.shape)
-            # print("b_true:", b_true.shape)
-            # print("y_true:", y_true.shape)
 
             # split dataset
             x_train = x_true[:SIZE].to(device)
@@ -51,7 +47,7 @@ if __name__ == "__main__":
 
             # train
             model = trainModel(
-                model=deepcopy(baseModel),
+                baseModel=deepcopy(baseModel),
                 x=x_train,
                 y=y_train,
                 lossFunction=lossFunction,
@@ -64,28 +60,21 @@ if __name__ == "__main__":
                 break
             parameter *= 1.01
 
-    # print("w_pred:", model.linear.weight.view(-1))
-    # print("w_true:", w_true)
-    # print("b_pred:", model.linear.bias.view(-1))
-    # print("b_true:", b_true)
-    # print("R2Score:", baseScore)
-
     # Leave-One-Out
     LOOScore = looScore(
-        x_train,
-        y_train,
-        x_test,
-        y_test,
-        baseModel,
-        lossFunction,
-        metric,
-        baseScore,
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
+        baseModel=baseModel,
+        lossFunction=lossFunction,
+        metric=metric,
+        baseScore=baseScore,
     )
 
     errorThreshold = 0.1
-    # TMC
-    # average performance and error
 
+    # TMC
     tmc = TMC(
         x_train=x_train,
         y_train=y_train,
@@ -101,6 +90,7 @@ if __name__ == "__main__":
     tmc.shapley()
     tmc.plotFigure([tmc.values, LOOScore])
 
+    # Gradient shapley
     g = G(
         x_train=x_train,
         y_train=y_train,

@@ -17,7 +17,7 @@ class LogisticRegressionModel(torch.nn.Module):
 
 
 def trainModel(
-    model: torch.nn.Module,
+    baseModel: torch.nn.Module,
     x: torch.Tensor,
     y: torch.Tensor,
     lossFunction: torch.nn.Module,
@@ -46,7 +46,7 @@ def trainModel(
     return: torch.nn.Module
         the trained model
     """
-    model = deepcopy(model)
+    model = deepcopy(baseModel)
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
 
