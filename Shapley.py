@@ -82,6 +82,32 @@ class Shapley:
         truncatedRounds: int,
         seed: int = 0,
     ) -> None:
+        """
+
+        Parameters:
+        -----------
+        x_train: torch.Tensor
+            the input data of training dataset
+        y_train: torch.Tensor
+            the target data of training dataset
+        x_test: torch.Tensor
+            the input data of testing dataset
+        y_test: torch.Tensor
+            the target data of testing dataset
+        baseModel: torch.nn.Module
+            the base model
+        lossFunction: torch.nn.Module
+            the loss function
+        metric: Metric
+            the metric function, accuracy
+        errorThreshold: float
+            the error threshold
+        truncatedRounds: int
+            truncate every truncatedRounds
+        seed: int
+            the seed
+
+        """
         self.x_train = x_train  # the input data of training dataset
         self.y_train = y_train  # the target data of training dataset
         self.x_test = x_test  # the input data of testing dataset
@@ -91,7 +117,7 @@ class Shapley:
         self.metric = metric  # the metric function, accuracy
         self.errorThreshold = errorThreshold  # the error threshold
         self.truncatedRounds = truncatedRounds  # truncate every truncatedRounds
-        np.random.seed(seed)
+        np.random.seed(seed)  # random seed
         self.memory = []  # the memory of the marginal contributions
         self.indexes = []  # the indexes of the data
         self.std = None  # the standard deviation of the Bagging
@@ -101,6 +127,51 @@ class Shapley:
             self.tqdm = False
         else:
             self.tqdm = True
+
+    def _oneRound(self):
+        raise NotImplementedError
+
+    def _shapley(self):
+        className = self.__class__.__name__
+        round = 1
+        error = self._calculateError()
+        processes = []
+        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
+        with tqdm(
+            total=self.truncatedRounds,
+            desc=f"Calculating {className} shapley round {round}, error={error:.4f}",
+            leave=True,
+        ) as t:
+            update = lambda *args: t.update()
+            while error > self.errorThreshold:
+                t.reset()  # reset the progress bar for reusing
+                if MULTIPROCESS:
+                    pool = mp.Pool(cpuNumber)
+                    for _ in range(self.truncatedRounds):
+                        processes.append(
+                            pool.apply_async(func=self._oneRound, callback=update)
+                        )
+
+                    pool.close()
+                    pool.join()
+                    for p in processes:
+                        marginals, indexes = p.get()
+                        self.memory.append(marginals)
+                        self.indexes.append(indexes)
+                else:
+                    for _ in range(self.truncatedRounds):
+                        marginals, indexes = self._oneRound()
+                        self.memory.append(marginals)
+                        self.indexes.append(indexes)
+                        update()
+
+                error = self._calculateError()
+                t.set_description(
+                    f"Calculating {className} shapley round {round}, error={error:.4f}"
+                )
+                t.refresh()
+                round += 1
+        self.values = np.mean(self.memory, axis=0)
 
     def _calculatePortionPerformance(self, indexes: list, plotPoints: list) -> np.array:
         """
@@ -119,31 +190,34 @@ class Shapley:
             the portion performance
         """
         scores = []
-        # initScore = (
-        #     torch.max(
-        #         torch.bincount(self.y_test.squeeze(-1).int()).float() / len(self.y_test)
-        #     )
-        #     .detach()
-        #     .cpu()
-        # )
+        initScore = (
+            torch.max(
+                torch.bincount(self.y_test.squeeze(-1).int()).float() / len(self.y_test)
+            )
+            .detach()
+            .cpu()
+        )
         for i in trange(
             len(plotPoints), 0, -1, desc="Calculating portion performance", leave=False
         ):
-            keepIndexes = np.array([idx for idx in indexes[plotPoints[i - 1] :]])
+            keepIndexes = np.array(
+                [idx for idx in indexes[plotPoints[i - 1] :]]
+            )  # every plotPoints data
             x, y = self.x_train[keepIndexes], self.y_train[keepIndexes]
-            # if len(torch.unique(y)) == len(torch.unique(y_test)):
-            model = deepcopy(self.baseModel)
-            model = trainModel(
-                baseModel=model,
-                x=x,
-                y=y,
-                lossFunction=self.lossFunction,
-                tqdm=self.tqdm,
-            )
-            y_pred = model(self.x_test)
-            scores.append(self.metric(y_pred, self.y_test).detach().cpu())
-            # else:
-            #     scores.append(initScore)
+            if len(torch.unique(y)) == len(
+                torch.unique(self.y_test)
+            ):  # if select data contains all classes
+                model = trainModel(
+                    baseModel=deepcopy(self.baseModel),
+                    x=x,
+                    y=y,
+                    lossFunction=self.lossFunction,
+                    tqdm=self.tqdm,
+                )
+                y_pred = model(self.x_test)
+                scores.append(self.metric(y_pred, self.y_test).detach().cpu())
+            else:
+                scores.append(initScore)
         return np.array(scores)[::-1]
 
     def plotFigure(self, values: list, numsOfPlotMarkers: int = 20) -> None:
@@ -179,7 +253,9 @@ class Shapley:
         random = np.mean(
             [
                 self._calculatePortionPerformance(
-                    np.random.permutation(np.argsort(valueSources[0])[::-1]),
+                    np.random.permutation(
+                        np.argsort(valueSources[0])[::-1]
+                    ),  # random exclude 1 datum
                     pointsPlot,
                 )
                 for _ in trange(10, desc="Calculating random performance")
@@ -240,8 +316,8 @@ class Shapley:
                 len(self.y_test), len(self.y_test)
             )  # random extraction with replacement
             y_pred = model(self.x_test[bagIndexes])
-            r2Score = self.metric(y_pred, self.y_test[bagIndexes])
-            bagScore.append(r2Score)
+            score = self.metric(y_pred, self.y_test[bagIndexes])
+            bagScore.append(score)
         self.std, self.mean = torch.std_mean(torch.stack(bagScore))
 
     def _calculateError(self) -> float:
@@ -254,16 +330,16 @@ class Shapley:
             the error
         """
 
-        if len(self.memory) < self.truncatedRounds:
+        if len(self.memory) < self.truncatedRounds:  # not finish calculating
             return 1.0
-        lastRoundValue = np.cumsum(self.memory, axis=0) / np.reshape(
+        meanEveryRound = np.cumsum(self.memory, axis=0) / np.reshape(
             np.arange(1, len(self.memory) + 1), (-1, 1)
-        )
+        )  # historical average
         errors = np.mean(
-            np.abs(lastRoundValue[-self.truncatedRounds :] - lastRoundValue[-1:])
-            / (np.abs(lastRoundValue[-1:]) + 1e-12),
+            np.abs(meanEveryRound[-self.truncatedRounds :] - meanEveryRound[-1:])
+            / (np.abs(meanEveryRound[-1:]) + 1e-12),
             -1,
-        )
+        )  # calculate the ratio of the difference between the historical average and the current average
         return np.max(errors)
 
 
@@ -282,6 +358,32 @@ class TMC(Shapley):
         truncatedRounds: int,
         seed: int = 0,
     ) -> None:
+        """
+
+        Parameters:
+        -----------
+        x_train: torch.Tensor
+            the input data of training dataset
+        y_train: torch.Tensor
+            the target data of training dataset
+        x_test: torch.Tensor
+            the input data of testing dataset
+        y_test: torch.Tensor
+            the target data of testing dataset
+        baseModel: torch.nn.Module
+            the base model
+        lossFunction: torch.nn.Module
+            the loss function
+        metric: Metric
+            the metric function, accuracy
+        errorThreshold: float
+            the error threshold
+        truncatedRounds: int
+            truncate every truncatedRounds
+        seed: int
+            the seed
+
+        """
         super().__init__(
             x_train=x_train,
             y_train=y_train,
@@ -296,53 +398,27 @@ class TMC(Shapley):
         )
 
     def shapley(self):
+        """
+        Calculate the TMC Shapley values
+        """
         self._bagScore()
-        error = self._calculateError()
-        round = 1
-
-        processes = []
-        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
-
-        with tqdm(
-            total=self.truncatedRounds,
-            desc=f"Calculating TMC shapley round {round}, error={error:.4f}",
-            leave=True,
-        ) as t:
-            update = lambda *args: t.update()
-            while error > self.errorThreshold:
-                t.reset()
-                if MULTIPROCESS:
-                    pool = mp.Pool(cpuNumber)
-                    for _ in range(self.truncatedRounds):
-                        processes.append(
-                            pool.apply_async(func=self._oneRound, callback=update)
-                        )
-
-                    pool.close()
-                    pool.join()
-                    for p in processes:
-                        marginals, indexes = p.get()
-                        self.memory.append(marginals)
-                        self.indexes.append(indexes)
-                else:
-                    for _ in range(self.truncatedRounds):
-                        marginals, indexes = self._oneRound()
-                        self.memory.append(marginals)
-                        self.indexes.append(indexes)
-                        update()
-
-                error = self._calculateError()
-                t.set_description(
-                    f"Calculating TMC shapley round {round}, error={error:.4f}"
-                )
-                t.refresh()
-                round += 1
-        self.values = np.mean(self.memory, axis=0)
+        self._shapley()
 
     def _oneRound(self):
+        """
+
+        Calculate the marginal contributions
+
+        Returns:
+        --------
+        return: tuple[np.array, list]
+            the marginal contributions and the indexes
+
+        """
+        model = deepcopy(self.baseModel)
         indexes = np.random.permutation(
             len(self.x_train)
-        )  # random permutation of train data
+        )  # random permutation of train data by choicing random permuted indexes
         marginalContributions = np.zeros(len(self.x_train))
         x = torch.zeros((0,) + tuple(self.x_train.shape[1:])).to(self.x_train.device)
         y = torch.zeros((0,) + tuple(self.y_train.shape[1:])).to(self.y_train.device)
@@ -357,18 +433,20 @@ class TMC(Shapley):
             oldScore = newScore
             x = torch.cat([x, self.x_train[i].unsqueeze(0)])
             y = torch.cat([y, self.y_train[i].unsqueeze(0)])
-            # if len(torch.unique(y)) == setSize:
-            model = trainModel(
-                baseModel=deepcopy(self.baseModel),
-                x=x,
-                y=y,
-                lossFunction=self.lossFunction,
-                tqdm=self.tqdm,
-            )
+            if len(torch.unique(y)) == setSize:  # if select data contains all classes
+                model = trainModel(
+                    baseModel=deepcopy(self.baseModel),
+                    x=x,
+                    y=y,
+                    lossFunction=self.lossFunction,
+                    tqdm=self.tqdm,
+                )
             newScore = self.metric(model(self.x_test), self.y_test)
             marginalContributions[i] = (newScore - oldScore).detach()
             distanceToFullScore = torch.abs(newScore - self.mean)
-            if distanceToFullScore <= 0.01 * self.mean:
+            if (
+                distanceToFullScore <= 0.01 * self.mean
+            ):  # if the distance is less than 1% of the mean, then the rest of data is not important
                 truncationCount += 1
                 if truncationCount >= 4:
                     break
@@ -398,6 +476,36 @@ class G(Shapley):
         batchSize: int = 1,
         seed: int = 0,
     ) -> None:
+        """
+
+        Parameters:
+        -----------
+        x_train: torch.Tensor
+            the input data of training dataset
+        y_train: torch.Tensor
+            the target data of training dataset
+        x_test: torch.Tensor
+            the input data of testing dataset
+        y_test: torch.Tensor
+            the target data of testing dataset
+        baseModel: torch.nn.Module
+            the base model
+        lossFunction: torch.nn.Module
+            the loss function
+        metric: Metric
+            the metric function, accuracy
+        errorThreshold: float
+            the error threshold
+        truncatedRounds: int
+            truncate every truncatedRounds
+        epoch: int
+            the number of epoch
+        batchSize: int
+            the batch size
+        seed: int
+            the seed
+
+        """
         super().__init__(
             x_train=x_train,
             y_train=y_train,
@@ -410,11 +518,24 @@ class G(Shapley):
             truncatedRounds=truncatedRounds,
             seed=seed,
         )
-        self.leanringRate = None
+        self.learningRate = None
         self.maxEpoch = epoch
         self.batchSize = batchSize
 
-    def _findLearningRateOneProcess(self, learningRate):
+    def _testAllLearningRate(self, learningRate):
+        """
+
+        Parameters:
+        -----------
+        learningRate: float
+            the learning rate
+
+        Returns:
+        --------
+        return: tuple[list, float]
+            the scores and the learning rate
+
+        """
         scores = []
         for _ in range(10):
             model = trainModel(
@@ -431,26 +552,34 @@ class G(Shapley):
         return scores, learningRate
 
     def _findLearningRate(self):
+        """
+
+        Returns:
+        --------
+        return: float
+            the learning rate
+
+        """
         bestScore = 0.0
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(np.arange(1, 5, 0.5), desc="Finding learning rate") as t:
             if MULTIPROCESS:
                 pool = mp.Pool(cpuNumber)
                 update = lambda *args: t.update()
-                result = pool.map_async(
-                    func=self._findLearningRateOneProcess,
+                results = pool.map_async(
+                    func=self._testAllLearningRate,
                     iterable=np.arange(1, 5, 0.5),
                     callback=update,
                 )
                 pool.close()
                 pool.join()
-                for res, i in result.get():
+                for result, i in results.get():
                     if (
-                        torch.mean(torch.stack(res)) - torch.std(torch.stack(res))
+                        torch.mean(torch.stack(result)) - torch.std(torch.stack(result))
                         > bestScore
                     ):
-                        bestScore = torch.mean(torch.stack(res)) - torch.std(
-                            torch.stack(res)
+                        bestScore = torch.mean(torch.stack(result)) - torch.std(
+                            torch.stack(result)
                         )
                         learningRate = 10 ** (-i)
             else:
@@ -479,20 +608,26 @@ class G(Shapley):
         return learningRate
 
     def _oneRound(self):
+        """
+
+        Returns:
+        --------
+        return: tuple[np.array, list]
+            the marginal contributions and the indexes
+
+        """
         model = deepcopy(self.baseModel)
-        learningRate = self.leanringRate
-        epoch, batchSize = self.maxEpoch, self.batchSize
         marginalContributions = np.zeros(len(self.x_train))
         indexes = []
         values = []
         stopCounter = 0
         bestScore = -math.inf
-        for _ in range(epoch):
+        for _ in range(self.maxEpoch):
             vals = []
             idxs = np.random.permutation(len(self.x_train))
             batches = [
-                idxs[k * batchSize : (k + 1) * batchSize]
-                for k in range(int(np.ceil(len(idxs) / batchSize)))
+                idxs[k * self.batchSize : (k + 1) * self.batchSize]
+                for k in range(int(np.ceil(len(idxs) / self.batchSize)))
             ]
             idxs = batches
             for _, batch in enumerate(batches):
@@ -501,7 +636,7 @@ class G(Shapley):
                     x=self.x_train[batch],
                     y=self.y_train[batch],
                     lossFunction=self.lossFunction,
-                    learningRate=learningRate,
+                    learningRate=self.learningRate,
                     tqdm=self.tqdm,
                 )
                 vals.append(
@@ -526,44 +661,12 @@ class G(Shapley):
         return individualContributions, indexes
 
     def shapley(self):
-        round = 1
-        error = self._calculateError()
-        processes = []
-        self.leanringRate = self._findLearningRate()
-        print(f"Using learning rate {self.leanringRate}")
-        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
-        with tqdm(
-            total=self.truncatedRounds,
-            desc=f"Calculating G shapley round {round}, error={error:.4f}",
-            leave=True,
-        ) as t:
-            update = lambda *args: t.update()
-            while error > self.errorThreshold:
-                t.reset()
-                if MULTIPROCESS:
-                    pool = mp.Pool(cpuNumber)
-                    for _ in range(self.truncatedRounds):
-                        processes.append(
-                            pool.apply_async(func=self._oneRound, callback=update)
-                        )
+        """
 
-                    pool.close()
-                    pool.join()
-                    for p in processes:
-                        marginals, indexes = p.get()
-                        self.memory.append(marginals)
-                        self.indexes.append(indexes)
-                else:
-                    for _ in range(self.truncatedRounds):
-                        marginals, indexes = self._oneRound()
-                        self.memory.append(marginals)
-                        self.indexes.append(indexes)
-                        update()
+        Calculate the G Shapley values
 
-                error = self._calculateError()
-                t.set_description(
-                    f"Calculating G shapley round {round}, error={error:.4f}"
-                )
-                t.refresh()
-                round += 1
-        self.values = np.mean(self.memory, axis=0)
+        """
+        self.learningRate = self._findLearningRate()
+        print(f"Using learning rate {self.learningRate}")
+
+        self._shapley()
