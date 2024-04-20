@@ -3,6 +3,10 @@ import torch.nn.functional as F
 from tqdm import trange
 from copy import deepcopy
 
+import sys
+
+sys.dont_write_bytecode = True
+
 
 class LogisticRegressionModel(torch.nn.Module):
 
@@ -23,7 +27,7 @@ def trainModel(
     lossFunction: torch.nn.Module,
     epochs: int = 5000,
     tqdm: bool = True,
-    learningRate: float = 0.03,
+    learningRate: float = 0.1,
 ) -> torch.nn.Module:
     """
     Train the model

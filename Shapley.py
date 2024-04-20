@@ -1,4 +1,5 @@
 import math
+from time import sleep
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +9,10 @@ from torchmetrics.metric import Metric
 from copy import deepcopy
 from tqdm import tqdm, trange
 from model import trainModel
+
+import sys
+
+sys.dont_write_bytecode = True
 
 MULTIPROCESS = True
 MAXCPUCOUNT = 20
@@ -576,6 +581,7 @@ class G(Shapley):
                 )
                 pool.close()
                 pool.join()
+                sleep(1)
                 for result, i in results.get():
                     if (
                         torch.mean(torch.stack(result)) - torch.std(torch.stack(result))

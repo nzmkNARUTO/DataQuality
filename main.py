@@ -8,6 +8,10 @@ from data_utils import f, regression2classification
 from model import LogisticRegressionModel, trainModel
 from Shapley import looScore, TMC, G
 
+import sys
+
+sys.dont_write_bytecode = True
+
 if __name__ == "__main__":
 
     # settings

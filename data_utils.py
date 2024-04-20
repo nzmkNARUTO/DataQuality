@@ -2,6 +2,10 @@ import torch
 import numpy as np
 from scipy.stats import logistic
 
+import sys
+
+sys.dont_write_bytecode = True
+
 
 def f(
     x: torch.Tensor, w: torch.Tensor, b: torch.Tensor, POLY_DEGREE: int, IMPORTANT: int
