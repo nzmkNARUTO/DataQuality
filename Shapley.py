@@ -10,7 +10,7 @@ from tqdm import tqdm, trange
 from model import trainModel
 
 MULTIPROCESS = True
-MAXCPUCOUNT = 25
+MAXCPUCOUNT = 20
 
 
 def looScore(
