@@ -132,6 +132,9 @@ class Shapley:
         raise NotImplementedError
 
     def _shapley(self):
+        """
+        Calculate the Shapley values
+        """
         className = self.__class__.__name__
         round = 1
         error = self._calculateError()
