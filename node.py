@@ -72,12 +72,12 @@ class Server(Node):
         self.threshold = threshold
         self.clients = []
 
-    def receive(self, models: list):
-        keys = models[0].keys()
-        newParams = {}
+    def receive(self, modelsParams: list):
+        keys = modelsParams[0].keys()
+        newModelParams = {}
         for key in keys:
-            newParams[key] = torch.stack([model[key] for model in models]).mean(0)
-        self.baseModel.load_state_dict(newParams)
+            newModelParams[key] = torch.stack([modelParams[key] for modelParams in modelsParams]).mean(0)
+        self.baseModel.load_state_dict(newModelParams)
 
     def evaluate(self):
         y_pred = self.baseModel(self.x_test)

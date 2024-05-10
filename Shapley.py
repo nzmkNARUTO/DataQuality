@@ -128,6 +128,7 @@ class Shapley:
         self.std = None  # the standard deviation of the Bagging
         self.mean = None  # the mean of the Bagging
         self.values = None  # the Shapley values
+        self.modelsParams = None  # the parameters of the models
         if MULTIPROCESS:  # whether to use multiprocessing
             self.tqdm = False
         else:
@@ -145,6 +146,7 @@ class Shapley:
         error = self._calculateError()
         processes = []
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
+        modelsParams = []
         with tqdm(
             total=self.truncatedRounds,
             desc=f"Calculating {className} shapley round {round}, error={error:.4f}",
@@ -163,12 +165,12 @@ class Shapley:
                     pool.close()
                     pool.join()
                     for p in processes:
-                        marginals, indexes = p.get()
+                        marginals, indexes, modelParams = p.get()
                         self.memory.append(marginals)
                         self.indexes.append(indexes)
                 else:
                     for _ in range(self.truncatedRounds):
-                        marginals, indexes = self._oneRound()
+                        marginals, indexes, modelParams = self._oneRound()
                         self.memory.append(marginals)
                         self.indexes.append(indexes)
                         update()
@@ -179,6 +181,14 @@ class Shapley:
                 )
                 t.refresh()
                 round += 1
+            modelsParams.append(modelParams)
+        keys = modelsParams[0].keys()
+        newModelParams = {}
+        for key in keys:
+            newModelParams[key] = torch.stack(
+                [modelParams[key] for modelParams in modelsParams]
+            ).mean(0)
+        self.modelsParams = newModelParams
         self.values = np.mean(self.memory, axis=0)
 
     def _bagScore(self) -> tuple[float, float]:
@@ -345,7 +355,7 @@ class TMCShapley(Shapley):
                     truncationCount=truncationCount,
                     distance=f"{distanceToFullScore.detach().cpu().numpy():.4f}",
                 )
-        return marginalContributions, indexes
+        return marginalContributions, indexes, model.state_dict()
 
 
 class GShapley(Shapley):
@@ -547,7 +557,7 @@ class GShapley(Shapley):
         for i, index in enumerate(indexes[0]):
             individualContributions[index] += marginalContributions[i]
             individualContributions[index] /= len(index)
-        return individualContributions, indexes
+        return individualContributions, indexes, model.state_dict()
 
     def shapley(self):
         """
@@ -656,7 +666,7 @@ class DShapley(Shapley):
             marginalContributions[i] = (score - initScore).detach().cpu().numpy()
             if self.tqdm:
                 t.set_postfix(score=marginalContributions[i])
-        return marginalContributions, list(s)
+        return marginalContributions, list(s), model.state_dict()
 
     def shapley(self):
         self._shapley()

@@ -145,3 +145,7 @@ if __name__ == "__main__":
         lossFunction=lossFunction,
         metric=metric,
     )
+
+    print(tmc.modelsParams)
+    print(g.modelsParams)
+    print(d.modelsParams)
