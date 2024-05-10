@@ -4,9 +4,9 @@ import torch.multiprocessing as mp
 from torchmetrics.classification import Accuracy
 from copy import deepcopy
 from tqdm import trange
-from data_utils import f, regression2classification
+from data_utils import f, regression2classification, plotFigure
 from model import LogisticRegressionModel, trainModel
-from Shapley import looScore, TMC, G
+from shapley import looScore, TMCShapley, GShapley, DShapley
 
 import sys
 
@@ -18,8 +18,9 @@ if __name__ == "__main__":
     POLY_DEGREE = 2  # the order of the polynomial
     X_DIMENSION = 50  # the dimension of x
     IMPORTANT = 2
-    SIZE = 100  # the size of train dataset
-
+    TRAIN_SIZE = 100  # the size of train dataset
+    TEST_SIZE = 1000  # the size of test dataset
+    D_SIZE = 1000
     torch.set_num_threads(6)
     mp.set_start_method("spawn", force=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +35,9 @@ if __name__ == "__main__":
         parameter = 1.0
         for _ in t:
             x_true = np.random.multivariate_normal(
-                np.zeros(X_DIMENSION), np.eye(X_DIMENSION), size=SIZE + 5000
+                np.zeros(X_DIMENSION),
+                np.eye(X_DIMENSION),
+                size=TRAIN_SIZE + TEST_SIZE + D_SIZE,
             )
             x_true = torch.tensor(x_true, dtype=torch.float32) * 5
             w_dimension = sum([IMPORTANT**pd for pd in range(1, POLY_DEGREE + 1)])
@@ -44,11 +47,12 @@ if __name__ == "__main__":
             y_true = regression2classification(y_true, parameter=parameter)
 
             # split dataset
-            x_train = x_true[:SIZE].to(device)
-            y_train = y_true[:SIZE].to(device)
-            x_test = x_true[SIZE:].to(device)
-            y_test = y_true[SIZE:].to(device)
-
+            x_train = x_true[:TRAIN_SIZE].to(device)
+            y_train = y_true[:TRAIN_SIZE].to(device)
+            x_distribution = x_true[TRAIN_SIZE : TRAIN_SIZE + D_SIZE].to(device)
+            y_distribution = y_true[TRAIN_SIZE : TRAIN_SIZE + D_SIZE].to(device)
+            x_test = x_true[TRAIN_SIZE + D_SIZE :].to(device)
+            y_test = y_true[TRAIN_SIZE + D_SIZE :].to(device)
             # train
             model = trainModel(
                 baseModel=deepcopy(baseModel),
@@ -79,7 +83,7 @@ if __name__ == "__main__":
     errorThreshold = 0.1
 
     # TMC
-    tmc = TMC(
+    tmc = TMCShapley(
         x_train=x_train,
         y_train=y_train,
         x_test=x_test,
@@ -92,10 +96,9 @@ if __name__ == "__main__":
         seed=0,
     )
     tmc.shapley()
-    tmc.plotFigure([tmc.values, LOOScore])
 
     # Gradient shapley
-    g = G(
+    g = GShapley(
         x_train=x_train,
         y_train=y_train,
         x_test=x_test,
@@ -109,4 +112,36 @@ if __name__ == "__main__":
         seed=0,
     )
     g.shapley()
-    g.plotFigure([g.values, LOOScore])
+
+    d = DShapley(
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
+        x_dist=x_distribution,
+        y_dist=y_distribution,
+        baseModel=baseModel,
+        lossFunction=lossFunction,
+        metric=metric,
+        errorThreshold=errorThreshold,
+        truncatedRounds=100,
+        seed=0,
+        truncatedNumber=200,
+    )
+    d.shapley()
+
+    plotFigure(
+        values={
+            "TMC": tmc.values,
+            "GShapley": g.values,
+            "DShapley": d.values,
+            "LOO": LOOScore,
+        },
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
+        baseModel=baseModel,
+        lossFunction=lossFunction,
+        metric=metric,
+    )

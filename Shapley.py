@@ -181,126 +181,6 @@ class Shapley:
                 round += 1
         self.values = np.mean(self.memory, axis=0)
 
-    def _calculatePortionPerformance(self, indexes: list, plotPoints: list) -> np.array:
-        """
-        Calculate the portion performance
-
-        Parameters:
-        -----------
-        indexes: list
-            the indexes of the data
-        plotPoints: list
-            the plot points
-
-        Returns:
-        --------
-        return: np.array
-            the portion performance
-        """
-        scores = []
-        initScore = (
-            torch.max(
-                torch.bincount(self.y_test.squeeze(-1).int()).float() / len(self.y_test)
-            )
-            .detach()
-            .cpu()
-        )
-        for i in trange(
-            len(plotPoints), 0, -1, desc="Calculating portion performance", leave=False
-        ):
-            keepIndexes = np.array(
-                [idx for idx in indexes[plotPoints[i - 1] :]]
-            )  # every plotPoints data
-            x, y = self.x_train[keepIndexes], self.y_train[keepIndexes]
-            if len(torch.unique(y)) == len(
-                torch.unique(self.y_test)
-            ):  # if select data contains all classes
-                model = trainModel(
-                    baseModel=deepcopy(self.baseModel),
-                    x=x,
-                    y=y,
-                    lossFunction=self.lossFunction,
-                    tqdm=self.tqdm,
-                )
-                y_pred = model(self.x_test)
-                scores.append(self.metric(y_pred, self.y_test).detach().cpu())
-            else:
-                scores.append(initScore)
-        return np.array(scores)[::-1]
-
-    def plotFigure(self, values: list, numsOfPlotMarkers: int = 20) -> None:
-        """
-        Plot the result figure
-
-        Parameters:
-        -----------
-        values: list
-            the values need to be plotted
-        numsOfPlotMarkers: int
-            the number of plot markers
-
-        """
-        plt.rcParams["figure.figsize"] = 8, 8
-        plt.rcParams["font.size"] = 25
-        plt.xlabel("Fraction of train data removed (%)", fontsize=20)
-        plt.ylabel("Prediction accuracy (%)", fontsize=20)
-        valueSources = [
-            np.array([np.sum(value[i]) for i in range(len(value))]) for value in values
-        ]
-        if len(values[0]) < numsOfPlotMarkers:
-            numsOfPlotMarkers = len(values[0]) - 1
-        pointsPlot = np.arange(
-            0,
-            max(len(values[0]) - 10, numsOfPlotMarkers),
-            max(len(values[0]) // numsOfPlotMarkers, 1),
-        )
-        performance = [
-            self._calculatePortionPerformance(np.argsort(valueSource)[::-1], pointsPlot)
-            for valueSource in tqdm(valueSources, desc="Calculating performance")
-        ]
-        random = np.mean(
-            [
-                self._calculatePortionPerformance(
-                    np.random.permutation(
-                        np.argsort(valueSources[0])[::-1]
-                    ),  # random exclude 1 datum
-                    pointsPlot,
-                )
-                for _ in trange(10, desc="Calculating random performance")
-            ],
-            0,
-        )
-        plt.plot(
-            pointsPlot / len(self.x_train) * 100,
-            performance[0] * 100,
-            "-",
-            lw=5,
-            ms=10,
-            color="b",
-            label=f"{self.__class__.__name__}",
-        )
-        plt.plot(
-            pointsPlot / len(self.x_train) * 100,
-            performance[-1] * 100,
-            "-.",
-            lw=5,
-            ms=10,
-            color="g",
-            label="LOO",
-        )
-        plt.plot(
-            pointsPlot / len(self.x_train) * 100,
-            random * 100,
-            ":",
-            lw=5,
-            ms=10,
-            color="r",
-            label="Random",
-        )
-        plt.legend()
-        plt.savefig(f"{self.__class__.__name__}.png", bbox_inches="tight")
-        plt.close()
-
     def _bagScore(self) -> tuple[float, float]:
         """
         Calculate Bagging mean&std
@@ -351,7 +231,7 @@ class Shapley:
         return np.max(errors)
 
 
-class TMC(Shapley):
+class TMCShapley(Shapley):
 
     def __init__(
         self,
@@ -468,7 +348,7 @@ class TMC(Shapley):
         return marginalContributions, indexes
 
 
-class G(Shapley):
+class GShapley(Shapley):
     def __init__(
         self,
         x_train: torch.Tensor,
@@ -678,4 +558,105 @@ class G(Shapley):
         self.learningRate = self._findLearningRate()
         print(f"Using learning rate {self.learningRate}")
 
+        self._shapley()
+
+
+class DShapley(Shapley):
+
+    def __init__(
+        self,
+        x_train: torch.Tensor,
+        y_train: torch.Tensor,
+        x_test: torch.Tensor,
+        y_test: torch.Tensor,
+        x_dist: torch.Tensor,
+        y_dist: torch.Tensor,
+        baseModel: Module,
+        lossFunction: Module,
+        metric: Metric,
+        errorThreshold: float,
+        truncatedRounds: int,
+        truncatedNumber: int,
+        seed: int = 0,
+    ) -> None:
+        """
+
+        Parameters:
+        -----------
+        x_train: torch.Tensor
+            the input data of training dataset
+        y_train: torch.Tensor
+            the target data of training dataset
+        x_test: torch.Tensor
+            the input data of testing dataset
+        y_test: torch.Tensor
+            the target data of testing dataset
+        baseModel: torch.nn.Module
+            the base model
+        lossFunction: torch.nn.Module
+            the loss function
+        metric: Metric
+            the metric function, accuracy
+        errorThreshold: float
+            the error threshold
+        truncatedRounds: int
+            truncate every truncatedRounds
+        seed: int
+            the seed
+
+        """
+        super().__init__(
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+            baseModel=baseModel,
+            lossFunction=lossFunction,
+            metric=metric,
+            errorThreshold=errorThreshold,
+            truncatedRounds=truncatedRounds,
+            seed=seed,
+        )
+        self.x_dist = x_dist
+        self.y_dist = y_dist
+        self.truncatedNumber = truncatedNumber
+
+    def _oneRound(self):
+        model = deepcopy(self.baseModel)
+        marginalContributions = np.zeros(len(self.x_train))
+        k = np.random.choice(np.arange(1, self.truncatedNumber + 1))
+        if k == 1:
+            return marginalContributions, []
+        s = np.random.choice(len(self.x_dist), k - 1)
+        x, y = self.x_dist[s], self.y_dist[s]
+        model = trainModel(
+            baseModel=model,
+            x=x,
+            y=y,
+            lossFunction=self.lossFunction,
+            tqdm=self.tqdm,
+        )
+        initScore = self.metric(model(self.x_test), self.y_test)
+        if self.tqdm:
+            t = tqdm(range(len(self.x_train)), desc="DShapley one round", leave=False)
+        else:
+            t = range(len(self.x_train))
+        for i in t:
+            x = torch.cat([x, self.x_train[i].unsqueeze(0)])
+            y = torch.cat([y, self.y_train[i].unsqueeze(0)])
+            model = deepcopy(self.baseModel)
+            model = trainModel(
+                baseModel=model,
+                x=x,
+                y=y,
+                lossFunction=self.lossFunction,
+                tqdm=self.tqdm,
+            )
+            score = self.metric(model(self.x_test), self.y_test)
+            marginalContributions[i] = (score - initScore).detach().cpu().numpy()
+            if self.tqdm:
+                t.set_postfix(score=marginalContributions[i])
+        return marginalContributions, list(s)
+
+    def shapley(self):
         self._shapley()
