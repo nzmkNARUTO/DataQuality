@@ -7,6 +7,7 @@ from tqdm import trange
 from data_utils import f, regression2classification, plotFigure
 from model import LogisticRegressionModel, trainModel
 from shapley import looScore, TMCShapley, GShapley, DShapley
+from node import Client, Server
 
 import sys
 
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     POLY_DEGREE = 2  # the order of the polynomial
     X_DIMENSION = 50  # the dimension of x
     IMPORTANT = 2
-    TRAIN_SIZE = 100  # the size of train dataset
+    TRAIN_SIZE = 200  # the size of train dataset
     TEST_SIZE = 1000  # the size of test dataset
     D_SIZE = 1000
     CLIENT_NUMBER = 2
@@ -68,3 +69,29 @@ if __name__ == "__main__":
             if baseScore > 0.7:
                 break
             parameter *= 1.01
+
+    server = Server(
+        baseModel=baseModel,
+        x_test=x_test,
+        y_test=y_test,
+        x_distribution=x_distribution,
+        y_distribution=y_distribution,
+        metric=metric,
+        threshold=0.8,
+    )
+    for i in range(CLIENT_NUMBER):
+        x_train = x_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
+        y_train = y_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
+        x_test = x_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
+        y_test = y_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
+        client = Client(
+            baseModel=baseModel,
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+            lossFunction=lossFunction,
+        )
+        server.clients.append(client)
+
+    server.train()
