@@ -117,7 +117,7 @@ class Server(Node):
 
     def train(self):
         acc = 0
-        accs=[]
+        accs = []
         while acc < self.threshold:
             for client in self.clients:
                 client.receive(self.send())
@@ -127,6 +127,6 @@ class Server(Node):
                 )
                 client.train()
             self.receive([client.send() for client in self.clients])
-            acc = self.evaluate()
+            acc = float(self.evaluate().detach().cpu().numpy())
             accs.append(acc)
             print(accs)
