@@ -24,7 +24,7 @@ if __name__ == "__main__":
     D_SIZE = 1000
     CLIENT_NUMBER = 2
     torch.set_num_threads(6)
-    mp.set_start_method("spawn", force=True)
+    mp.set_start_method("forkserver", force=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu")
     baseModel = LogisticRegressionModel(X_DIMENSION).to(device)
@@ -80,17 +80,22 @@ if __name__ == "__main__":
         threshold=0.8,
     )
     for i in range(CLIENT_NUMBER):
-        x_train = x_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
-        y_train = y_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
-        x_test = x_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
-        y_test = y_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
+        x_train_temp = x_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
+        y_train_temp = y_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
+        x_test_temp = x_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
+        y_test_temp = y_test[i * TEST_SIZE : (i + 1) * TEST_SIZE].to(device)
         client = Client(
-            baseModel=baseModel,
-            x_train=x_train,
-            y_train=y_train,
-            x_test=x_test,
-            y_test=y_test,
+            baseModel=deepcopy(baseModel),
+            x_train=x_train_temp,
+            y_train=y_train_temp,
+            x_test=x_test_temp,
+            y_test=y_test_temp,
             lossFunction=lossFunction,
+            metric=metric,
+            errorThreshold=0.1,
+            truncatedRounds=100,
+            seed=0,
+            truncatedNumber=200,
         )
         server.clients.append(client)
 

@@ -22,7 +22,7 @@ if __name__ == "__main__":
     TEST_SIZE = 1000  # the size of test dataset
     D_SIZE = 1000
     torch.set_num_threads(6)
-    mp.set_start_method("spawn", force=True)
+    mp.set_start_method("forkserver", force=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu")
     baseModel = LogisticRegressionModel(X_DIMENSION).to(device)
