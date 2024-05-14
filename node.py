@@ -1,6 +1,7 @@
 import torch
 
 from model import trainModel
+from shapley import DShapley
 
 
 class Node:
@@ -29,6 +30,11 @@ class Client(Node):
         x_test: torch.Tensor,
         y_test: torch.Tensor,
         lossFunction: torch.nn.Module,
+        metric: torch.nn.Module,
+        errorThreshold: float,
+        truncatedRounds: int,
+        seed: int,
+        truncatedNumber: int,
     ):
         super().__init__(baseModel)
         self.x_train = x_train
@@ -36,17 +42,38 @@ class Client(Node):
         self.x_test = x_test
         self.y_test = y_test
         self.lossFunction = lossFunction
+        self.metric = metric
+        self.errorThreshold = errorThreshold
+        self.truncatedRounds = truncatedRounds
+        self.seed = seed
+        self.truncatedNumber = truncatedNumber
+        self.x_distribution = None
+        self.y_distribution = None
 
-    def loadServerDataset(self):
-        pass
+    def loadServerDataset(
+        self, x_distribution: torch.Tensor, y_distribution: torch.Tensor
+    ):
+        self.x_distribution = x_distribution
+        self.y_distribution = y_distribution
 
     def train(self):
-        self.baseModel = trainModel(
+        d = DShapley(
+            x_train=self.x_train,
+            y_train=self.y_train,
+            x_test=self.x_test,
+            y_test=self.y_test,
+            x_dist=self.x_distribution,
+            y_dist=self.y_distribution,
             baseModel=self.baseModel,
-            x=self.x_train,
-            y=self.y_train,
             lossFunction=self.lossFunction,
+            metric=self.metric,
+            errorThreshold=self.errorThreshold,
+            truncatedRounds=self.truncatedRounds,
+            seed=self.seed,
+            truncatedNumber=self.truncatedNumber,
         )
+        d.shapley()
+        self.baseModel.load_state_dict(d.modelsParams)
 
     def receive(self, modelParams: dict):
         self.baseModel.load_state_dict(modelParams)
@@ -76,7 +103,9 @@ class Server(Node):
         keys = modelsParams[0].keys()
         newModelParams = {}
         for key in keys:
-            newModelParams[key] = torch.stack([modelParams[key] for modelParams in modelsParams]).mean(0)
+            newModelParams[key] = torch.stack(
+                [modelParams[key] for modelParams in modelsParams]
+            ).mean(0)
         self.baseModel.load_state_dict(newModelParams)
 
     def evaluate(self):
@@ -88,10 +117,16 @@ class Server(Node):
 
     def train(self):
         acc = 0
+        accs=[]
         while acc < self.threshold:
             for client in self.clients:
                 client.receive(self.send())
+                client.loadServerDataset(
+                    x_distribution=self.x_distribution,
+                    y_distribution=self.y_distribution,
+                )
                 client.train()
             self.receive([client.send() for client in self.clients])
             acc = self.evaluate()
-            print(f"accuracy:{acc.item()}")
+            accs.append(acc)
+            print(accs)
