@@ -145,7 +145,7 @@ class Shapley:
         round = 0
         error = self._calculateError()
         processes = []
-        cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
+        cpuNumber = min(mp.cpu_count() - 1, MAXCPUCOUNT)
         modelsParams = []
         with tqdm(
             total=self.truncatedRounds,
