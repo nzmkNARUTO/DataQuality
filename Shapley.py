@@ -142,7 +142,7 @@ class Shapley:
         Calculate the Shapley values
         """
         className = self.__class__.__name__
-        round = 1
+        round = 0
         error = self._calculateError()
         processes = []
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
@@ -176,11 +176,11 @@ class Shapley:
                         update()
 
                 error = self._calculateError()
+                round += 1
                 t.set_description(
                     f"Calculating {className} shapley round {round}, error={error:.4f}"
                 )
                 t.refresh()
-                round += 1
             modelsParams.append(modelParams)
         keys = modelsParams[0].keys()
         newModelParams = {}
@@ -636,7 +636,7 @@ class DShapley(Shapley):
         marginalContributions = np.zeros(len(self.x_train))
         k = np.random.choice(np.arange(1, self.truncatedNumber + 1))
         if k == 1:
-            return marginalContributions, []
+            return marginalContributions, [], model.state_dict()
         s = np.random.choice(len(self.x_dist), k - 1)
         x, y = self.x_dist[s], self.y_dist[s]
         model = trainModel(
@@ -646,7 +646,8 @@ class DShapley(Shapley):
             lossFunction=self.lossFunction,
             tqdm=self.tqdm,
         )
-        initScore = self.metric(model(self.x_test), self.y_test)
+        y_pred = model(self.x_test)
+        initScore = self.metric(y_pred, self.y_test)
         if self.tqdm:
             t = tqdm(range(len(self.x_train)), desc="DShapley one round", leave=False)
         else:
