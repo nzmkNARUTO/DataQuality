@@ -1,7 +1,7 @@
 import torch
 
 from model import trainModel
-from shapley import DShapley
+from shapley import DShapley, GShapley
 
 
 class Node:
@@ -57,20 +57,18 @@ class Client(Node):
         self.y_distribution = y_distribution
 
     def train(self):
-        d = DShapley(
+        d = GShapley(
             x_train=self.x_train,
             y_train=self.y_train,
             x_test=self.x_test,
             y_test=self.y_test,
-            x_dist=self.x_distribution,
-            y_dist=self.y_distribution,
             baseModel=self.baseModel,
             lossFunction=self.lossFunction,
             metric=self.metric,
             errorThreshold=self.errorThreshold,
-            truncatedRounds=self.truncatedRounds,
-            seed=self.seed,
-            truncatedNumber=self.truncatedNumber,
+            truncatedRounds=100,
+            epoch=1,
+            seed=0,
         )
         d.shapley()
         self.baseModel.load_state_dict(d.modelsParams)
