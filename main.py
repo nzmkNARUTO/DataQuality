@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -95,7 +96,9 @@ if __name__ == "__main__":
         truncatedRounds=100,
         seed=0,
     )
+    startTime = time.time()
     tmc.shapley()
+    print("TMC time:", time.time() - startTime)
 
     # Gradient shapley
     g = GShapley(
@@ -111,7 +114,9 @@ if __name__ == "__main__":
         epoch=1,
         seed=0,
     )
+    startTime = time.time()
     g.shapley()
+    print("Gradient time:", time.time() - startTime)
 
     d = DShapley(
         x_train=x_train,
@@ -128,7 +133,9 @@ if __name__ == "__main__":
         seed=0,
         truncatedNumber=200,
     )
+    startTime = time.time()
     d.shapley()
+    print("Distribution time:", time.time() - startTime)
 
     plotFigure(
         values={
@@ -145,7 +152,3 @@ if __name__ == "__main__":
         lossFunction=lossFunction,
         metric=metric,
     )
-
-    print(tmc.modelsParams)
-    print(g.modelsParams)
-    print(d.modelsParams)
