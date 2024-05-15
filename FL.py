@@ -77,7 +77,7 @@ if __name__ == "__main__":
         x_distribution=x_distribution,
         y_distribution=y_distribution,
         metric=metric,
-        threshold=0.8,
+        threshold=0.9,
     )
     for i in range(CLIENT_NUMBER):
         x_train_temp = x_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)
