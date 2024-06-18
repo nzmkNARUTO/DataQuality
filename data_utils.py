@@ -5,12 +5,95 @@ import matplotlib.colors as mcolors
 from tqdm import tqdm, trange
 from scipy.stats import logistic
 from copy import deepcopy
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 
 from model import trainModel
 
 import sys
 
 sys.dont_write_bytecode = True
+
+
+def get_mnist_datasets(n_participants):
+    trainDatasets = []
+    testDatasets = []
+    trainDatasets.append(
+        DataLoader(
+            dataset=datasets.MNIST(
+                "../data",
+                train=True,
+                download=True,
+                transform=transforms.Compose(
+                    [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+                ),
+            ),
+            batch_size=64,
+            shuffle=True,
+        )
+    )
+
+    testDatasets.append(
+        DataLoader(
+            dataset=datasets.MNIST(
+                "../data",
+                train=False,
+                transform=transforms.Compose(
+                    [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+                ),
+            ),
+            batch_size=64,
+            shuffle=True,
+        )
+    )
+    return trainDatasets, testDatasets
+
+
+def get_synthetic_datasets(n_participants, d=1, sizes=[], s=50, ranges=None):
+    """
+    Args:
+        n_participants (int): number of data subsets to generate
+        d (int): dimension
+        sizes (list of int): number of data samples for each participant, if supplied
+        s (int): number of data samples for each participant (equal), if supplied
+        ranges (list of list): the lower and upper bound of the input domain for each participant, if supplied
+
+    Returns:
+        list containing the generated synthetic datasets for all participants
+    """
+
+    if 0 == len(sizes):
+        sizes = torch.ones(n_participants, dtype=int) * s
+
+    datasets = []
+    for i, size in enumerate(sizes):
+        if ranges != None:
+            dataset = (
+                torch.rand((size, d)) * (ranges[i][1] - ranges[i][0]) + ranges[i][0]
+            )
+        else:
+            dataset = torch.rand((size, d)) * (1 - 0) + 0
+            # dataset = np.random.uniform(0, 1, (size, d))
+            # dataset = np.random.normal(0, 1, (size,d))
+        datasets.append(dataset.reshape(-1, d))
+    return datasets
+
+
+def generate_linear_labels(x_train, d=1, weights=None, bias=None):
+
+    # generate random true weights and the bias
+    if weights is None:
+        weights = torch.normal(0, 1, size=(d,))
+    if bias is None:
+        bias = torch.normal(0, 1, size=(1,))
+
+    labels = []
+    weight_bias = torch.cat((weights, bias))
+    for X in x_train:
+        one_padded_X = torch.cat((X, torch.ones((len(X), 1))), axis=1)
+        y = (one_padded_X @ weight_bias).reshape(-1, 1)
+        labels.append(y)
+    return labels, weights, bias
 
 
 def f(

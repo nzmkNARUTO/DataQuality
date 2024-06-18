@@ -19,7 +19,7 @@ if __name__ == "__main__":
     POLY_DEGREE = 2  # the order of the polynomial
     X_DIMENSION = 50  # the dimension of x
     IMPORTANT = 2
-    TRAIN_SIZE = 100  # the size of train dataset
+    TRAIN_SIZE = 200  # the size of train dataset
     TEST_SIZE = 1000  # the size of test dataset
     D_SIZE = 1000
     CLIENT_NUMBER = 2
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         x_distribution=x_distribution,
         y_distribution=y_distribution,
         metric=metric,
-        threshold=0.9,
+        threshold=0.8,
     )
     for i in range(CLIENT_NUMBER):
         x_train_temp = x_train[i * TRAIN_SIZE : (i + 1) * TRAIN_SIZE].to(device)

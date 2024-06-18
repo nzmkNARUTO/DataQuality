@@ -16,7 +16,7 @@ class LogisticRegressionModel(torch.nn.Module):
 
     def forward(self, x):
         y_pred = self.linear(x)
-        y_pred = F.sigmoid(y_pred)
+        # y_pred = F.sigmoid(y_pred)
         return y_pred
 
 
@@ -51,8 +51,8 @@ def trainModel(
         the trained model
     """
     model = deepcopy(baseModel)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
+    optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
 
     previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
@@ -70,7 +70,7 @@ def trainModel(
             t.set_postfix(loss=f"{loss.item():.4f}")
         deltaLoss = abs(previousLoss - loss.item())
         previousLoss = loss.item()
-        if previousLoss < 1e-2 or deltaLoss < 1e-10:
+        if previousLoss < 1e-2 or deltaLoss < 1e-8:
             break
         loss = optimizer.step()
     if tqdm:

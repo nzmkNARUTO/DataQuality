@@ -5,9 +5,10 @@ import torch.multiprocessing as mp
 from torchmetrics.classification import Accuracy
 from copy import deepcopy
 from tqdm import trange
+from torchviz import make_dot
 from data_utils import f, regression2classification, plotFigure
 from model import LogisticRegressionModel, trainModel
-from shapley import looScore, TMCShapley, GShapley, DShapley
+from shapley import TMCShapley, GShapley, DShapley, LOO
 
 import sys
 
@@ -68,9 +69,9 @@ if __name__ == "__main__":
             if baseScore > 0.7:
                 break
             parameter *= 1.01
+        make_dot(y_pred).render(filename="model", view=False)
 
-    # Leave-One-Out
-    LOOScore = looScore(
+    loo = LOO(
         x_train=x_train,
         y_train=y_train,
         x_test=x_test,
@@ -78,8 +79,9 @@ if __name__ == "__main__":
         baseModel=baseModel,
         lossFunction=lossFunction,
         metric=metric,
-        baseScore=baseScore,
     )
+    loo.loo()
+    loo.plot()
 
     errorThreshold = 0.1
 
@@ -142,7 +144,7 @@ if __name__ == "__main__":
             "TMC": tmc.values,
             "GShapley": g.values,
             "DShapley": d.values,
-            "LOO": LOOScore,
+            "LOO": loo.values,
         },
         x_train=x_train,
         y_train=y_train,

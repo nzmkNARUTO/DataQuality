@@ -1,7 +1,7 @@
 import torch
 
 from model import trainModel
-from shapley import DShapley, GShapley
+from shapley import DShapley, GShapley, looScore
 
 
 class Node:
@@ -56,8 +56,42 @@ class Client(Node):
         self.x_distribution = x_distribution
         self.y_distribution = y_distribution
 
+    def calculateBaseScore(self):
+        y_pred = self.baseModel(self.x_test)
+        return self.metric(y_pred, self.y_test)
+
     def train(self):
-        d = GShapley(
+        # d = GShapley(
+        #     x_train=self.x_train,
+        #     y_train=self.y_train,
+        #     x_test=self.x_test,
+        #     y_test=self.y_test,
+        #     baseModel=self.baseModel,
+        #     lossFunction=self.lossFunction,
+        #     metric=self.metric,
+        #     errorThreshold=self.errorThreshold,
+        #     truncatedRounds=100,
+        #     epoch=1,
+        #     seed=0,
+        # )
+        # d = DShapley(
+        #     x_train=self.x_train,
+        #     y_train=self.y_train,
+        #     x_test=self.x_test,
+        #     y_test=self.y_test,
+        #     x_dist=self.x_distribution,
+        #     y_dist=self.y_distribution,
+        #     baseModel=self.baseModel,
+        #     lossFunction=self.lossFunction,
+        #     metric=self.metric,
+        #     errorThreshold=self.errorThreshold,
+        #     truncatedRounds=100,
+        #     seed=0,
+        #     truncatedNumber=200,
+        # )
+        # d.shapley()
+        # self.baseModel.load_state_dict(d.modelParams)
+        LOOScore, modelParams = looScore(
             x_train=self.x_train,
             y_train=self.y_train,
             x_test=self.x_test,
@@ -65,13 +99,9 @@ class Client(Node):
             baseModel=self.baseModel,
             lossFunction=self.lossFunction,
             metric=self.metric,
-            errorThreshold=self.errorThreshold,
-            truncatedRounds=100,
-            epoch=1,
-            seed=0,
+            baseScore=self.calculateBaseScore(),
         )
-        d.shapley()
-        self.baseModel.load_state_dict(d.modelsParams)
+        self.baseModel.load_state_dict(modelParams)
 
     def receive(self, modelParams: dict):
         self.baseModel.load_state_dict(modelParams)

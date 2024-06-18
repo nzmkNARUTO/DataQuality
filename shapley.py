@@ -18,58 +18,83 @@ MULTIPROCESS = True
 MAXCPUCOUNT = 20
 
 
-def looScore(
-    x_train: torch.Tensor,
-    y_train: torch.Tensor,
-    x_test: torch.Tensor,
-    y_test: torch.Tensor,
-    baseModel: torch.nn.Module,
-    lossFunction: torch.nn.Module,
-    metric: Metric,
-    baseScore: float,
-) -> list[float]:
-    """
-    Calculate Leave-One-Out score
+class LOO:
 
-    Parameters:
-    -----------
-    x_train: torch.Tensor
-        the input data of training dataset
-    y_train: torch.Tensor
-        the target data of training dataset
-    x_test: torch.Tensor
-        the input data of testing dataset
-    y_test: torch.Tensor
-        the target data of testing dataset
-    baseModel: torch.nn.Module
-        the base model
-    lossFunction: torch.nn.Module
-        the loss function
-    metric: Metric
-        the metric function
-    baseScore: float
-        the base performance score
+    def __init__(
+        self,
+        x_train: torch.Tensor,
+        y_train: torch.Tensor,
+        x_test: torch.Tensor,
+        y_test: torch.Tensor,
+        baseModel: torch.nn.Module,
+        lossFunction: torch.nn.Module,
+        metric: Metric,
+    ) -> None:
+        self.x_train = x_train  # the input data of training dataset
+        self.y_train = y_train  # the target data of training dataset
+        self.x_test = x_test  # the input data of testing dataset
+        self.y_test = y_test  # the target data of testing dataset
+        self.baseModel = baseModel  # the base model
+        self.lossFunction = lossFunction  # the loss function
+        self.metric = metric  # the metric function
+        self.values = []
+        y_pred = self.baseModel(x_test)
+        self.baseScore = metric(y_pred, y_test)
 
-    Returns:
-    --------
-    return: list[float]
-        the Leave-One-Out score
-    """
-
-    LOOScore = []
-    for i in trange(len(x_train), desc="Caculating LOO"):
+    def _looOneRound(self, i):
         model = trainModel(
-            baseModel=deepcopy(baseModel),
+            baseModel=deepcopy(self.baseModel),
             x=torch.cat(
-                [x_train[:i], x_train[i + 1 :]]
+                [self.x_train[:i], self.x_train[i + 1 :]]
             ),  # train model without i-th data
-            y=torch.cat([y_train[:i], y_train[i + 1 :]]),
-            lossFunction=lossFunction,
+            y=torch.cat([self.y_train[:i], self.y_train[i + 1 :]]),
+            lossFunction=self.lossFunction,
+            tqdm=False,
         )  # train model without i-th data
-        y_pred = model(x_test)
-        Score = metric(y_pred, y_test)
-        LOOScore.append((baseScore - Score).cpu().detach().numpy())
-    return LOOScore
+        y_pred = model(self.x_test)
+        score = self.metric(y_pred, self.y_test)
+        return score, model.state_dict()
+
+    def loo(self):
+        cpuNumber = min(mp.cpu_count() - 1, MAXCPUCOUNT)
+        with tqdm(range(len(self.x_train)), desc="Caculating LOO") as t:
+            if MULTIPROCESS:
+                processes = []
+                pool = mp.Pool(cpuNumber)
+                update = lambda *args: t.update()
+                for i in range(len(self.x_train)):
+                    processes.append(
+                        pool.apply_async(
+                            func=self._looOneRound, args=(i,), callback=update
+                        )
+                    )
+                pool.close()
+                pool.join()
+            else:
+                self.values = [self._looOneRound(i) for i in t]
+            modelsParams = []
+            for p in processes:
+                score, modelParams = p.get()
+                self.values.append((self.baseScore - score).cpu().detach().numpy())
+                modelsParams.append(modelParams)
+            keys = modelsParams[0].keys()
+            newModelParams = {}
+            for key in keys:
+                newModelParams[key] = torch.stack(
+                    [modelParams[key] for modelParams in modelsParams]
+                ).mean(0)
+            self.modelsParams = newModelParams
+
+    def plot(self):
+        plt.plot(
+            range(len(self.values)),
+            self.values,
+            "-",
+            lw=5,
+            ms=10,
+        )
+        plt.savefig(f"test.png", bbox_inches="tight")
+        plt.close()
 
 
 class Shapley:
@@ -128,7 +153,7 @@ class Shapley:
         self.std = None  # the standard deviation of the Bagging
         self.mean = None  # the mean of the Bagging
         self.values = None  # the Shapley values
-        self.modelsParams = None  # the parameters of the models
+        self.modelParams = None  # the parameters of the models
         if MULTIPROCESS:  # whether to use multiprocessing
             self.tqdm = False
         else:
@@ -144,7 +169,6 @@ class Shapley:
         className = self.__class__.__name__
         round = 0
         error = self._calculateError()
-        processes = []
         cpuNumber = min(mp.cpu_count() - 1, MAXCPUCOUNT)
         modelsParams = []
         with tqdm(
@@ -156,6 +180,7 @@ class Shapley:
             while error > self.errorThreshold:
                 t.reset()  # reset the progress bar for reusing
                 if MULTIPROCESS:
+                    processes = []
                     pool = mp.Pool(cpuNumber)
                     for _ in range(self.truncatedRounds):
                         processes.append(
@@ -188,7 +213,7 @@ class Shapley:
             newModelParams[key] = torch.stack(
                 [modelParams[key] for modelParams in modelsParams]
             ).mean(0)
-        self.modelsParams = newModelParams
+        self.modelParams = newModelParams
         self.values = np.mean(self.memory, axis=0)
 
     def _bagScore(self) -> tuple[float, float]:
@@ -462,17 +487,19 @@ class GShapley(Shapley):
         cpuNumber = min(mp.cpu_count(), MAXCPUCOUNT)
         with tqdm(np.arange(1, 5, 0.5), desc="Finding learning rate") as t:
             if MULTIPROCESS:
+                processes = []
                 pool = mp.Pool(cpuNumber)
                 update = lambda *args: t.update()
-                results = pool.map_async(
-                    func=self._testAllLearningRate,
-                    iterable=np.arange(1, 5, 0.5),
-                    callback=update,
-                )
+                for i in np.arange(1, 5, 0.5):
+                    processes.append(
+                        pool.apply_async(
+                            func=self._testAllLearningRate, args=(i,), callback=update
+                        )
+                    )
                 pool.close()
                 pool.join()
-                sleep(1)
-                for result, i in results.get():
+                for p in processes:
+                    result, i = p.get()
                     if (
                         torch.mean(torch.stack(result)) - torch.std(torch.stack(result))
                         > bestScore
