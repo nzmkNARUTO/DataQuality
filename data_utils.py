@@ -1,4 +1,5 @@
 import torch
+import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -6,94 +7,98 @@ from tqdm import tqdm, trange
 from scipy.stats import logistic
 from copy import deepcopy
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
+from sklearn.datasets import make_classification
+from torch.distributions import Dirichlet
 
-from model import trainModel
+from model import train_model
 
 import sys
 
 sys.dont_write_bytecode = True
 
 
-def get_mnist_datasets(n_participants):
-    trainDatasets = []
-    testDatasets = []
-    trainDatasets.append(
-        DataLoader(
-            dataset=datasets.MNIST(
-                "../data",
-                train=True,
-                download=True,
-                transform=transforms.Compose(
-                    [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-                ),
-            ),
-            batch_size=64,
-            shuffle=True,
-        )
+class VolumeDataset(Dataset):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __getitem__(self, index):
+        return self.x[index], self.y[index]
+
+    def __len__(self):
+        return len(self.x)
+
+
+def generate_synthetic_classification_data(size=10000, dimension=10, classes=10):
+    x, y = make_classification(
+        n_samples=size,
+        n_features=dimension,
+        n_informative=dimension // 2 + 1,
+        n_redundant=0,
+        n_classes=classes,
+        n_clusters_per_class=1,
     )
-
-    testDatasets.append(
-        DataLoader(
-            dataset=datasets.MNIST(
-                "../data",
-                train=False,
-                transform=transforms.Compose(
-                    [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-                ),
-            ),
-            batch_size=64,
-            shuffle=True,
-        )
-    )
-    return trainDatasets, testDatasets
+    x = torch.tensor(x, dtype=torch.float32)
+    y = torch.tensor(y, dtype=torch.int64)
+    return VolumeDataset(x, y)
 
 
-def get_synthetic_datasets(n_participants, d=1, sizes=[], s=50, ranges=None):
-    """
-    Args:
-        n_participants (int): number of data subsets to generate
-        d (int): dimension
-        sizes (list of int): number of data samples for each participant, if supplied
-        s (int): number of data samples for each participant (equal), if supplied
-        ranges (list of list): the lower and upper bound of the input domain for each participant, if supplied
+def dirichlet_split(train_labels, alpha, n_clients):
+    n_classes = (train_labels.max() + 1).to(int)
+    label_distribution = Dirichlet(
+        torch.full((n_clients,), alpha, dtype=torch.float32)
+    ).sample((n_classes,))
+    class_idcs = [torch.nonzero(train_labels == y).flatten() for y in range(n_classes)]
+    client_idcs = [[] for _ in range(n_clients)]
 
-    Returns:
-        list containing the generated synthetic datasets for all participants
-    """
+    for c, fracs in zip(class_idcs, label_distribution):
+        total_size = len(c)
+        splits = (fracs * total_size).int()
+        splits[-1] = total_size - splits[:-1].sum()
+        idcs = torch.split(c, splits.tolist())
+        for i, idx in enumerate(idcs):
+            client_idcs[i] += [idcs[i]]
 
-    if 0 == len(sizes):
-        sizes = torch.ones(n_participants, dtype=int) * s
+    client_idcs = [torch.cat(idcs) for idcs in client_idcs]
+    return client_idcs
 
+
+def get_mnist_datasets(n_participants, train):
+    xs = []
     datasets = []
-    for i, size in enumerate(sizes):
-        if ranges != None:
-            dataset = (
-                torch.rand((size, d)) * (ranges[i][1] - ranges[i][0]) + ranges[i][0]
-            )
-        else:
-            dataset = torch.rand((size, d)) * (1 - 0) + 0
-            # dataset = np.random.uniform(0, 1, (size, d))
-            # dataset = np.random.normal(0, 1, (size,d))
-        datasets.append(dataset.reshape(-1, d))
-    return datasets
+    for _ in range(n_participants):
+        dataset = torchvision.datasets.MNIST(
+            "./data",
+            train=train,
+            download=True,
+            transform=transforms.Compose(
+                [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+            ),
+        )
+        xs.append(dataset.data.float())
+        datasets.append(dataset)
+    return xs, datasets
 
 
-def generate_linear_labels(x_train, d=1, weights=None, bias=None):
+def generate_synthetic_data(d=1, size=50):
+    data = torch.rand((size, d)) * (1 - 0) + 0
+    # dataset = np.random.uniform(0, 1, (size, d))
+    # dataset = np.random.normal(0, 1, (size,d))
+    return data
 
-    # generate random true weights and the bias
-    if weights is None:
-        weights = torch.normal(0, 1, size=(d,))
-    if bias is None:
-        bias = torch.normal(0, 1, size=(1,))
 
-    labels = []
-    weight_bias = torch.cat((weights, bias))
-    for X in x_train:
-        one_padded_X = torch.cat((X, torch.ones((len(X), 1))), axis=1)
-        y = (one_padded_X @ weight_bias).reshape(-1, 1)
-        labels.append(y)
-    return labels, weights, bias
+def generate_linear_label(xTrain, d=1, weight=None, bias=None):
+    weightBias = torch.cat((weight, bias))
+    onePaddedX = torch.cat((xTrain, torch.ones((len(xTrain), 1))), axis=1)
+    label = (onePaddedX @ weightBias).reshape(-1, 1)
+    return label
+
+
+def generate_weight_bias(d=1):
+    weight = torch.normal(0, 1, size=(d,))
+    bias = torch.normal(0, 1, size=(1,))
+    return weight, bias
 
 
 def f(
@@ -136,7 +141,7 @@ def f(
     return torch.sum(w * features + b, -1).unsqueeze(-1)
 
 
-def regression2classification(y_true: torch.Tensor, parameter: float) -> torch.Tensor:
+def regression2classification(yTrue: torch.Tensor, parameter: float) -> torch.Tensor:
     """
     Convert regression label to classification binary label
 
@@ -150,21 +155,21 @@ def regression2classification(y_true: torch.Tensor, parameter: float) -> torch.T
     return: torch.Tensor
         the classification binary label
     """
-    mean, std = y_true.mean(0), y_true.std(0)
-    y_true = (y_true - mean) / std  # normalize
-    y_true = logistic.cdf(parameter * y_true)
-    y = (np.random.random(y_true.shape[-1]) < y_true).astype(np.float32)
+    mean, std = yTrue.mean(0), yTrue.std(0)
+    yTrue = (yTrue - mean) / std  # normalize
+    yTrue = logistic.cdf(parameter * yTrue)
+    y = (np.random.random(yTrue.shape[-1]) < yTrue).astype(np.float32)
     return torch.from_numpy(y)
 
 
-def plotFigure(
+def plot_figure(
     values: dict,
-    x_train: torch.Tensor,
-    y_train: torch.Tensor,
-    x_test: torch.Tensor,
-    y_test: torch.Tensor,
+    xTrain: torch.Tensor,
+    yTrain: torch.Tensor,
+    xTest: torch.Tensor,
+    yTest: torch.Tensor,
     baseModel: torch.nn.Module,
-    lossFunction: torch.nn.Module,
+    loss_func: torch.nn.Module,
     metric: torch.nn.Module,
     numsOfPlotMarkers: int = 20,
 ) -> None:
@@ -196,32 +201,32 @@ def plotFigure(
         max(len(values[0]) // numsOfPlotMarkers, 1),
     )
     performance = [
-        _calculatePortionPerformance(
+        _calculate_portion_performance(
             indexes=np.argsort(valueSource)[::-1],
             plotPoints=pointsPlot,
-            x_train=x_train,
-            y_train=y_train,
-            x_test=x_test,
-            y_test=y_test,
+            xTrain=xTrain,
+            yTrain=yTrain,
+            xTest=xTest,
+            yTest=yTest,
             baseModel=baseModel,
-            lossFunction=lossFunction,
+            loss_func=loss_func,
             metric=metric,
         )
         for valueSource in tqdm(valueSources, desc="Calculating performance")
     ]
     random = np.mean(
         [
-            _calculatePortionPerformance(
+            _calculate_portion_performance(
                 indexes=np.random.permutation(
                     np.argsort(valueSources[0])[::-1]
                 ),  # random exclude 1 datum
                 plotPoints=pointsPlot,
-                x_train=x_train,
-                y_train=y_train,
-                x_test=x_test,
-                y_test=y_test,
+                xTrain=xTrain,
+                yTrain=yTrain,
+                xTest=xTest,
+                yTest=yTest,
                 baseModel=baseModel,
-                lossFunction=lossFunction,
+                loss_func=loss_func,
                 metric=metric,
             )
             for _ in trange(10, desc="Calculating random performance")
@@ -231,7 +236,7 @@ def plotFigure(
     colors = list(mcolors.TABLEAU_COLORS.keys())
     for i in range(len(valuesKeys)):
         plt.plot(
-            pointsPlot / len(x_train) * 100,
+            pointsPlot / len(xTrain) * 100,
             performance[i] * 100,
             "-",
             lw=5,
@@ -258,7 +263,7 @@ def plotFigure(
     #     label="LOO",
     # )
     plt.plot(
-        pointsPlot / len(x_train) * 100,
+        pointsPlot / len(xTrain) * 100,
         random * 100,
         "-",
         lw=5,
@@ -271,15 +276,15 @@ def plotFigure(
     plt.close()
 
 
-def _calculatePortionPerformance(
+def _calculate_portion_performance(
     indexes: list,
     plotPoints: list,
-    x_train: torch.Tensor,
-    y_train: torch.Tensor,
-    x_test: torch.Tensor,
-    y_test: torch.Tensor,
+    xTrain: torch.Tensor,
+    yTrain: torch.Tensor,
+    xTest: torch.Tensor,
+    yTest: torch.Tensor,
     baseModel: torch.nn.Module,
-    lossFunction: torch.nn.Module,
+    loss_func: torch.nn.Module,
     metric: torch.nn.Module,
 ) -> np.array:
     """
@@ -299,7 +304,7 @@ def _calculatePortionPerformance(
     """
     scores = []
     initScore = (
-        torch.max(torch.bincount(y_test.squeeze(-1).int()).float() / len(y_test))
+        torch.max(torch.bincount(yTest.squeeze(-1).int()).float() / len(yTest))
         .detach()
         .cpu()
     )
@@ -309,19 +314,19 @@ def _calculatePortionPerformance(
         keepIndexes = np.array(
             [idx for idx in indexes[plotPoints[i - 1] :]]
         )  # every plotPoints data
-        x, y = x_train[keepIndexes], y_train[keepIndexes]
+        x, y = xTrain[keepIndexes], yTrain[keepIndexes]
         if len(torch.unique(y)) == len(
-            torch.unique(y_test)
+            torch.unique(yTest)
         ):  # if select data contains all classes
-            model = trainModel(
+            model = train_model(
                 baseModel=deepcopy(baseModel),
                 x=x,
                 y=y,
-                lossFunction=lossFunction,
+                loss_func=loss_func,
                 tqdm=True,
             )
-            y_pred = model(x_test)
-            scores.append(metric(y_pred, y_test).detach().cpu())
+            y_pred = model(xTest)
+            scores.append(metric(y_pred, yTest).detach().cpu())
         else:
             scores.append(initScore)
     return np.array(scores)[::-1]
