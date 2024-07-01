@@ -6,8 +6,8 @@ from torchmetrics.classification import Accuracy
 from copy import deepcopy
 from tqdm import trange
 from torchviz import make_dot
-from data_utils import f, regression2classification, plotFigure
-from model import LogisticRegressionModel, trainModel
+from data_utils import f, regression2classification, plot_figure
+from model import LogisticRegressionModel, train_model
 from shapley import TMCShapley, GShapley, DShapley, LOO
 
 import sys
@@ -56,11 +56,11 @@ if __name__ == "__main__":
             x_test = x_true[TRAIN_SIZE + D_SIZE :].to(device)
             y_test = y_true[TRAIN_SIZE + D_SIZE :].to(device)
             # train
-            model = trainModel(
+            model = train_model(
                 baseModel=deepcopy(baseModel),
                 x=x_train,
                 y=y_train,
-                lossFunction=lossFunction,
+                loss_func=lossFunction,
             )
             # evaluate
             y_pred = model(x_test)
@@ -139,18 +139,18 @@ if __name__ == "__main__":
     d.shapley()
     print("Distribution time:", time.time() - startTime)
 
-    plotFigure(
+    plot_figure(
         values={
             "TMC": tmc.values,
             "GShapley": g.values,
             "DShapley": d.values,
             "LOO": loo.values,
         },
-        x_train=x_train,
-        y_train=y_train,
-        x_test=x_test,
-        y_test=y_test,
+        xTrain=x_train,
+        yTrain=y_train,
+        xTest=x_test,
+        yTest=y_test,
         baseModel=baseModel,
-        lossFunction=lossFunction,
+        loss_func=lossFunction,
         metric=metric,
     )

@@ -8,7 +8,7 @@ from torch.nn.modules import Module
 from torchmetrics.metric import Metric
 from copy import deepcopy
 from tqdm import tqdm, trange
-from model import trainModel
+from model import train_model
 
 import sys
 
@@ -42,13 +42,13 @@ class LOO:
         self.baseScore = metric(y_pred, y_test)
 
     def _looOneRound(self, i):
-        model = trainModel(
+        model = train_model(
             baseModel=deepcopy(self.baseModel),
             x=torch.cat(
                 [self.x_train[:i], self.x_train[i + 1 :]]
             ),  # train model without i-th data
             y=torch.cat([self.y_train[:i], self.y_train[i + 1 :]]),
-            lossFunction=self.lossFunction,
+            loss_func=self.lossFunction,
             tqdm=False,
         )  # train model without i-th data
         y_pred = model(self.x_test)
@@ -226,11 +226,11 @@ class Shapley:
             the Bagging [std, mean]
         """
 
-        model = trainModel(
+        model = train_model(
             baseModel=deepcopy(self.baseModel),
             x=self.x_train,
             y=self.y_train,
-            lossFunction=self.lossFunction,
+            loss_func=self.lossFunction,
             tqdm=self.tqdm,
         )
         bagScore = []
@@ -357,11 +357,11 @@ class TMCShapley(Shapley):
             x = torch.cat([x, self.x_train[i].unsqueeze(0)])
             y = torch.cat([y, self.y_train[i].unsqueeze(0)])
             if len(torch.unique(y)) == setSize:  # if select data contains all classes
-                model = trainModel(
+                model = train_model(
                     baseModel=deepcopy(self.baseModel),
                     x=x,
                     y=y,
-                    lossFunction=self.lossFunction,
+                    loss_func=self.lossFunction,
                     tqdm=self.tqdm,
                 )
             newScore = self.metric(model(self.x_test), self.y_test)
@@ -461,11 +461,11 @@ class GShapley(Shapley):
         """
         scores = []
         for _ in range(10):
-            model = trainModel(
+            model = train_model(
                 baseModel=deepcopy(self.baseModel),
                 x=self.x_train,
                 y=self.y_train,
-                lossFunction=self.lossFunction,
+                loss_func=self.lossFunction,
                 learningRate=10 ** (-learningRate),
                 tqdm=False,
             )
@@ -513,11 +513,11 @@ class GShapley(Shapley):
                     t.set_description(f"Finding learning rate 10e{(-i)}")
                     scores = []
                     for _ in trange(10, desc="Testing learning rate", leave=False):
-                        model = trainModel(
+                        model = train_model(
                             baseModel=deepcopy(self.baseModel),
                             x=self.x_train,
                             y=self.y_train,
-                            lossFunction=self.lossFunction,
+                            loss_func=self.lossFunction,
                             learningRate=10 ** (-i),
                         )
                         y_pred = model(self.x_test)
@@ -557,11 +557,11 @@ class GShapley(Shapley):
             ]
             idxs = batches
             for _, batch in enumerate(batches):
-                model = trainModel(
+                model = train_model(
                     baseModel=model,
                     x=self.x_train[batch],
                     y=self.y_train[batch],
-                    lossFunction=self.lossFunction,
+                    loss_func=self.lossFunction,
                     learningRate=self.learningRate,
                     tqdm=self.tqdm,
                 )
@@ -666,11 +666,11 @@ class DShapley(Shapley):
             return marginalContributions, [], model.state_dict()
         s = np.random.choice(len(self.x_dist), k - 1)
         x, y = self.x_dist[s], self.y_dist[s]
-        model = trainModel(
+        model = train_model(
             baseModel=model,
             x=x,
             y=y,
-            lossFunction=self.lossFunction,
+            loss_func=self.lossFunction,
             tqdm=self.tqdm,
         )
         y_pred = model(self.x_test)
@@ -683,11 +683,11 @@ class DShapley(Shapley):
             x = torch.cat([x, self.x_train[i].unsqueeze(0)])
             y = torch.cat([y, self.y_train[i].unsqueeze(0)])
             model = deepcopy(self.baseModel)
-            model = trainModel(
+            model = train_model(
                 baseModel=model,
                 x=x,
                 y=y,
-                lossFunction=self.lossFunction,
+                loss_func=self.lossFunction,
                 tqdm=self.tqdm,
             )
             score = self.metric(model(self.x_test), self.y_test)
