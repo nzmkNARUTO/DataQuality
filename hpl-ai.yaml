@@ -1,0 +1,19 @@
+services:
+    hpc-benchmarks:
+        stdin_open: true
+        tty: true
+        container_name: hpc
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - driver: nvidia
+                          count: all
+                          capabilities:
+                              - gpu
+        ipc: host
+        ulimits:
+            memlock: -1
+            stack: 67108864
+        image: nvcr.io/nvidia/hpc-benchmarks:24.03
+        command: bash
