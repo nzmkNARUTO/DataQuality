@@ -15,15 +15,18 @@ class Volume:
         self.volume = None
         self.xTilde = None
         self.cubes = None
+        self.volume = None
         self.robustVolume = None
 
     def compute_volume(self):
         d = self.x.shape[1]
         self.x = self.x.reshape(-1, d)
+        sign, logdet = torch.slogdet(self.x.T @ self.x)
+        # volume = sign * torch.exp(logdet)
+        # volume = torch.sqrt(torch.det(self.x.T @ self.x) + 1e-8)
+        # volume = np.sqrt(np.linalg.det(self.x.T @ self.x) + 1e-8)
 
-        volume = np.sqrt(np.linalg.det(self.x.T @ self.x) + 1e-8)
-
-        self.volume = volume
+        self.volume = {"sign": sign, "logdet": logdet}
         return self
 
     def _compute_x_tilde(self):
@@ -50,7 +53,7 @@ class Volume:
         minDimensions = torch.min(self.x, axis=0).values
 
         # a dictionary to store cubes of not full size
-        for x in tqdm(self.x):
+        for x in tqdm(self.x, desc="Computing X_tilde", leave=False):
             cube = []
             for _, xd in enumerate(x - minDimensions):
                 d_index = floor(xd / self.omega)
@@ -102,5 +105,6 @@ class Volume:
 
             rhoOmegaProd *= rho_omega
 
-        robustVolume = (volume * rhoOmegaProd).round(3)
-        self.robustVolume = robustVolume
+        # robustVolume = (volume * rhoOmegaProd).round(3)
+        volume["rhoOmegaProd"] = rhoOmegaProd
+        self.robustVolume = volume

@@ -67,11 +67,11 @@ def train_model(
     return: torch.nn.Module
         the trained model
     """
-    dataloader = DataLoader(dataset, batch_size=batchSize, shuffle=True, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=batchSize, shuffle=True, num_workers=8)
     loss_func = loss_func.to(device)
     model = deepcopy(baseModel).to(device)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
+    optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
 
     previousLoss = (
         1e10  # previous loss, for calculating delta loss, if delta loss < 1e-10, break
@@ -126,6 +126,7 @@ def test_model(
     """
     dataloader = DataLoader(dataset, batch_size=batchSize, shuffle=True)
     metric = metric.to(device)
+    model = model.to(device)
     metric.reset()
     for x, y in dataloader:
         yPred = model(x.to(device))

@@ -29,12 +29,19 @@ class VolumeDataset(Dataset):
     def __len__(self):
         return len(self.x)
 
+    def slice(self, indices):
+        return VolumeDataset(self.x[indices], self.y[indices])
+
+    def distribute(self):
+        distribution = torch.bincount(self.y)
+        print(distribution)
+
 
 def generate_synthetic_classification_data(size=10000, dimension=10, classes=10):
     x, y = make_classification(
         n_samples=size,
         n_features=dimension,
-        n_informative=dimension // 2 + 1,
+        n_informative=int(dimension**0.5) + 1,
         n_redundant=0,
         n_classes=classes,
         n_clusters_per_class=1,
@@ -44,12 +51,12 @@ def generate_synthetic_classification_data(size=10000, dimension=10, classes=10)
     return VolumeDataset(x, y)
 
 
-def dirichlet_split(train_labels, alpha, n_clients):
-    n_classes = (train_labels.max() + 1).to(int)
+def dirichlet_split(dataset, n_clients, alpha):
+    n_classes = (dataset.y.max() + 1).to(int)
     label_distribution = Dirichlet(
         torch.full((n_clients,), alpha, dtype=torch.float32)
     ).sample((n_classes,))
-    class_idcs = [torch.nonzero(train_labels == y).flatten() for y in range(n_classes)]
+    class_idcs = [torch.nonzero(dataset.y == y).flatten() for y in range(n_classes)]
     client_idcs = [[] for _ in range(n_clients)]
 
     for c, fracs in zip(class_idcs, label_distribution):
@@ -61,7 +68,27 @@ def dirichlet_split(train_labels, alpha, n_clients):
             client_idcs[i] += [idcs[i]]
 
     client_idcs = [torch.cat(idcs) for idcs in client_idcs]
-    return client_idcs
+    datasets = []
+    for i in range(n_clients):
+        datasets.append(
+            VolumeDataset(dataset.x[client_idcs[i]], dataset.y[client_idcs[i]])
+        )
+    return datasets
+
+
+def even_split(dataset, n_clients):
+    indices = list(range(len(dataset)))
+    np.random.shuffle(indices)
+    client_size = len(dataset) // n_clients
+    client_idcs = [
+        indices[i * client_size : (i + 1) * client_size] for i in range(n_clients)
+    ]
+    datasets = []
+    for i in range(n_clients):
+        datasets.append(
+            VolumeDataset(dataset.x[client_idcs[i]], dataset.y[client_idcs[i]])
+        )
+    return datasets
 
 
 def get_mnist_datasets(n_participants, train):
